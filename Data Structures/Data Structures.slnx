@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="AVL Tree/AVL Tree.vcxproj" />
+  <Project Path="Forward List/Forward List.vcxproj" />
+</Solution>
