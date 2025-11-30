@@ -5,6 +5,7 @@
 #include<queue>
 #include<iostream>
 
+#include"node_handle.h"
 #include"memory.hpp"
 #include"type_traits.hpp"
 
@@ -49,7 +50,8 @@ public:
 				}
 				_ptr = std::exchange(currNode, currNode->parent);
 			}
-		} else { // Goes to the leftmost node of right subtree
+		}
+		else { // Goes to the leftmost node of right subtree
 			_ptr = AVLTreeVal::min(_ptr->right);
 		}
 		return *this;
@@ -64,7 +66,8 @@ public:
 	_AVLTreeConstIterator& operator--() noexcept {
 		if (_ptr->isHead) { // Goes back from end() to the rightmost node
 			_ptr = _ptr->right;
-		} else if (!_ptr->left) {
+		}
+		else if (!_ptr->left) {
 			for (_NodePointer currNode = _ptr->parent;;) {
 				// Stop when reaching head or going upwards from a right subtree for the first time
 				if (currNode->isHead || _ptr != currNode->left) {
@@ -75,7 +78,8 @@ public:
 				}
 				_ptr = std::exchange(currNode, currNode->parent);
 			}
-		} else { // Goes to the rightmost node of left subtree
+		}
+		else { // Goes to the rightmost node of left subtree
 			_ptr = AVLTreeVal::max(_ptr->left);
 		}
 		return *this;
@@ -99,7 +103,7 @@ private:
 	_NodePointer _ptr;
 };
 
-/*
+
 template<class AVLTreeVal>
 class _AVLTreeIterator : public _AVLTreeConstIterator<AVLTreeVal> {
 private:
@@ -143,7 +147,7 @@ public:
 		return temp;
 	}
 };
-*/
+
 
 template<class ValueType>
 struct _AVLTreeNode {
@@ -206,11 +210,14 @@ struct _AVLTreeNode {
 		// If oldChild and *this are parent and child, replace oldChild with newChild
 		if (isHead) {
 			parent = newChild;
-		} else if (oldChild == left) {
+		}
+		else if (oldChild == left) {
 			left = newChild;
-		} else if (oldChild == right) {
+		}
+		else if (oldChild == right) {
 			right = newChild;
-		} else {
+		}
+		else {
 			return;
 		}
 
@@ -450,7 +457,8 @@ public:
 			if (location.parent == head->left) { // New min node, update head->left
 				head->left = newNode;
 			}
-		} else { // Insert as right child
+		}
+		else { // Insert as right child
 			location.parent->right = newNode;
 			if (location.parent == head->right) { // New max node, update head->right
 				head->right = newNode;
@@ -464,14 +472,16 @@ public:
 	std::pair<NodePointer, NodePointer> extract(const _AVLTreeConstIterator<_AVLTreeValue> pos) noexcept {
 		// Extract node pointed by pos
 		--size;
-		const NodePointer extracted	= pos.getPointer(); // UB: pos == AVLTree::end()
+		const NodePointer extracted = pos.getPointer(); // UB: pos == AVLTree::end()
 		const NodePointer nextNode	= std::next(pos, 1).getPointer();
 		if (size == 0) { // Extract final node
 			head->left	= nullptr;
 			head->right = nullptr;
-		} else if (extracted == head->left) { // Extract leftmost node
+		}
+		else if (extracted == head->left) { // Extract leftmost node
 			head->left = nextNode;
-		} else if (extracted == head->right) { // Extract rightmost node
+		}
+		else if (extracted == head->right) { // Extract rightmost node
 			head->right = std::prev(pos, 1).getPointer();
 		}
 
@@ -480,15 +490,15 @@ public:
 			const NodePointer successor = this->min(extracted->right);
 			successor->parent->releaseChild(successor);
 			extracted->parent->replaceChild(extracted, successor);
-			
+
 			if (extracted->left) { // Adopt extracted's left child
 				extracted->left->parent = successor;
-				successor->left			= std::exchange(extracted->left, nullptr);
+				successor->left = std::exchange(extracted->left, nullptr);
 			}
-			
+
 			if (extracted->right) { // Adopt extracted's right child
-				extracted->right->parent	= successor;
-				successor->right			= std::exchange(extracted->right, nullptr);
+				extracted->right->parent = successor;
+				successor->right = std::exchange(extracted->right, nullptr);
 			}
 			extracted->parent = successor; // Fix tree starting point
 		}
@@ -536,7 +546,7 @@ public:
 
 private:
 	using _Node			= _AVLTreeNode<value_type>;
-	using _NodePointer	= _Node::NodePointer;
+	using _NodePointer	= typename _Node::NodePointer;
 
 	using _AVLTreeVal	= _AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _Node>;
 
@@ -692,8 +702,6 @@ public:
 		return true;
 	}
 
-	// nodeHandle
-
 	// find
 		// Iterator find(const key_type&)
 		// ConstIterator find(const key_type&)
@@ -715,6 +723,20 @@ public:
 		_data.size = 0;
 	}
 
+#if __cplusplus >= 201703L
+public:
+	using NodeHandle = _NodeHandle<_Node, _NodeHandleSetBase, value_type>;
+
+	NodeHandle extract(const ConstIterator pos) {
+		const auto result = _data.extract(pos);
+		return NodeHandle(result.first);
+	}
+
+	NodeHandle extract(const value_type& key) {
+		
+	}
+#endif // Has C++17
+
 	// Testing purpose only
 	enum Traversal {
 		PRE, IN, POST, LEVEL, LEVEL_H
@@ -729,25 +751,25 @@ public:
 		}
 
 		switch (order) {
-		case PRE: {
-			break;
-		}
-		case IN: {
-			this->_inOrder(root);
-			break;
-		}
-		case POST: {
-			break;
-		}
-		case LEVEL: {
-			this->_levelOrder(root, [](const _NodePointer& node) { std::cout << node->value << " "; });
-			break;
-		}
-		case LEVEL_H:
-		{
-			this->_levelOrder(root, [](const _NodePointer& node) { std::cout << static_cast<int>(node->height) << " "; });
-			break;
-		}
+			case PRE: {
+				break;
+			}
+			case IN: {
+				this->_inOrder(root);
+				break;
+			}
+			case POST: {
+				break;
+			}
+			case LEVEL: {
+				this->_levelOrder(root, [](const _NodePointer& node) { std::cout << node->value << " "; });
+				break;
+			}
+			case LEVEL_H:
+			{
+				this->_levelOrder(root, [](const _NodePointer& node) { std::cout << static_cast<int>(node->height) << " "; });
+				break;
+			}
 		}
 		std::cout << "\nMin: " << _data.head->left->value << " - Max: " << _data.head->right->value << "\n";
 		//std::cout << "Root->parent: " << _data.head->parent->parent << "\n";
@@ -785,7 +807,7 @@ public:
 private:
 	_NodePointer _copyNode(value_type& val, _CopyStrategy strat) {
 		// Construct node by copying or moving val, depending on strat
-		if constexpr (strat == _CopyStrategy::COPY) {
+		if (strat == _CopyStrategy::COPY) {
 			return _Node::constructNode(val);
 		}
 		return _Node::constructNode(std::move(val));
@@ -800,7 +822,8 @@ private:
 			newRoot->height = oldRoot->height;
 			newRoot->left	= this->_copySubtree(oldRoot->left, newRoot, strat);
 			newRoot->right	= this->_copySubtree(oldRoot->right, newRoot, strat);
-		} else {
+		}
+		else {
 			std::cout << "Copy from empty tree!\n";
 		}
 		return newRoot;
@@ -813,7 +836,8 @@ private:
 		if ((_data.size = other._data.size) == 0) {
 			_data.head->left	= _data.head;
 			_data.head->right	= _data.head;
-		} else {
+		}
+		else {
 			_data.head->left	= _AVLTreeVal::min(_data.head->parent);
 			_data.head->right	= _AVLTreeVal::max(_data.head->parent);
 		}
@@ -840,7 +864,8 @@ private:
 			if (currNode->value < key) {
 				result.location.child	= _NodeChild::RIGHT;
 				currNode				= currNode->right;
-			} else {
+			}
+			else {
 				result.location.child	= _NodeChild::LEFT;
 				result.bound			= currNode;
 				currNode				= currNode->left;

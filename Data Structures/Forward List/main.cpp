@@ -1,6 +1,3 @@
-#define SIZE 10
-#define TYPE int
-
 #include<forward_list>
 
 #include"random.hpp"

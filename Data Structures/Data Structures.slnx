@@ -3,6 +3,6 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="AVL Tree/AVL Tree.vcxproj" />
-  <Project Path="Forward List/Forward List.vcxproj" />
+  <Project Path="AVL Tree/AVL Tree.vcxproj" Id="ccc5641c-ef2a-4ef3-839d-3f8788c809eb" />
+  <Project Path="Forward List/Forward List.vcxproj" Id="3bb67cde-16f4-4c1b-aa85-7edf82f72dff" />
 </Solution>
