@@ -4,10 +4,17 @@
 
 #include<queue>
 #include<iostream>
+#include<functional>
 
 #include"node_handle.h"
 #include"memory.hpp"
 #include"type_traits.hpp"
+
+using std::cout;
+
+enum Traversal {
+	PRE, IN, POST, LEVEL, LEVEL_H
+};
 
 template<class AVLTreeVal>
 class _AVLTreeConstIterator {
@@ -225,7 +232,6 @@ struct _AVLTreeNode {
 			newChild->parent = oldChild->parent;
 		}
 	}
-
 	// Align for minimal padding
 	NodePointer left;	// 8 bytes pointer
 	NodePointer right;	// 8 bytes pointer
@@ -533,7 +539,7 @@ public:
 	size_type size; // Total number of nodes
 };
 
-template<class T>
+template<class T, class Comp = std::less<>>
 class AVLTree {
 public:
 	using value_type		= T;
@@ -702,9 +708,25 @@ public:
 		return true;
 	}
 
-	// find
-		// Iterator find(const key_type&)
-		// ConstIterator find(const key_type&)
+	[[nodiscard]] Iterator find(const value_type& key) {
+		return Iterator(this->_find(key));
+	}
+
+	[[nodiscard]] ConstIterator find(const value_type& key) const {
+		return ConstIterator(this->_find(key));
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] Iterator find(const KeyType& key) {
+		return Iterator(this->_find(key));
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] ConstIterator find(const KeyType& key) const {
+		return ConstIterator(this->_find(key));
+	}
 
 	// swap
 	// extract
@@ -724,24 +746,21 @@ public:
 	}
 
 #if __cplusplus >= 201703L
+
 public:
 	using NodeHandle = _NodeHandle<_Node, _NodeHandleSetBase, value_type>;
 
 	NodeHandle extract(const ConstIterator pos) {
 		const auto result = _data.extract(pos);
-		return NodeHandle(result.first);
+		return NodeHandle::make(result.first);
 	}
 
-	NodeHandle extract(const value_type& key) {
+	/*NodeHandle extract(const value_type& key) {
 		
-	}
+	}*/
 #endif // Has C++17
 
 	// Testing purpose only
-	enum Traversal {
-		PRE, IN, POST, LEVEL, LEVEL_H
-	};
-
 	void print(const Traversal order = Traversal::IN) {
 		std::cout << "My tree: ";
 		const _NodePointer root = _data.head->parent;
@@ -951,6 +970,15 @@ private:
 		const auto result = _data.extract(pos); // UB
 		_Node::freeNode(result.first);
 		return result.second;
+	}
+
+	template<class T>
+	[[nodiscard]] _NodePointer _find(const T& key) const {
+		const auto result = this->_findNodeLocation(key);
+		if (this->_isDuplicateKey(result.bound, key)) {
+			return result.bound;
+		}
+		return _data.head;
 	}
 
 private:
