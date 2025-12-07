@@ -16,17 +16,17 @@ enum Traversal {
 	PRE, IN, POST, LEVEL, LEVEL_H
 };
 
-template<class AVLTreeVal>
+template<class _AVLTreeVal>
 class _AVLTreeConstIterator {
 private:
-	using _Node			= typename AVLTreeVal::Node;
-	using _NodePointer	= typename AVLTreeVal::NodePointer;
+	using _NodeType		= typename _AVLTreeVal::NodeType;
+	using _NodePointer	= typename _AVLTreeVal::NodePointer;
 
 public:
 	using iterator_category = std::bidirectional_iterator_tag;
-	using value_type		= typename AVLTreeVal::value_type;
-	using difference_type	= typename AVLTreeVal::difference_type;
-	using pointer			= typename AVLTreeVal::const_pointer;
+	using value_type		= typename _AVLTreeVal::ValueType;
+	using difference_type	= typename _AVLTreeVal::DifferenceType;
+	using pointer			= typename _AVLTreeVal::ConstPointer;
 	using reference			= const value_type&;
 
 	_AVLTreeConstIterator() noexcept
@@ -40,11 +40,11 @@ public:
 	}
 
 	[[nodiscard]] reference operator*() const noexcept {
-		return _ptr->value;
+		return _ptr->value; // UB: nullptr or end() dereference
 	}
 
 	[[nodiscard]] pointer operator->() const noexcept {
-		return static_cast<pointer>(std::addressof(**this));
+		return static_cast<pointer>(std::addressof(**this)); // UB: nullptr or end() dereference
 	}
 
 	_AVLTreeConstIterator& operator++() noexcept {
@@ -59,7 +59,7 @@ public:
 			}
 		}
 		else { // Goes to the leftmost node of right subtree
-			_ptr = AVLTreeVal::min(_ptr->right);
+			_ptr = _AVLTreeVal::min(_ptr->right);
 		}
 		return *this;
 	}
@@ -87,7 +87,7 @@ public:
 			}
 		}
 		else { // Goes to the rightmost node of left subtree
-			_ptr = AVLTreeVal::max(_ptr->left);
+			_ptr = _AVLTreeVal::max(_ptr->left);
 		}
 		return *this;
 	}
@@ -110,26 +110,25 @@ private:
 	_NodePointer _ptr;
 };
 
-
-template<class AVLTreeVal>
-class _AVLTreeIterator : public _AVLTreeConstIterator<AVLTreeVal> {
+template<class _AVLTreeVal>
+class _AVLTreeIterator : public _AVLTreeConstIterator<_AVLTreeVal> {
 private:
-	using _BaseIter	= _AVLTreeConstIterator<AVLTreeVal>;
+	using _BaseIter	= _AVLTreeConstIterator<_AVLTreeVal>;
 	using _BaseIter::_BaseIter;
 
 public:
 	using iterator_category = std::bidirectional_iterator_tag;
-	using value_type		= typename AVLTreeVal::value_type;
-	using difference_type	= typename AVLTreeVal::difference_type;
-	using pointer			= typename AVLTreeVal::pointer;
+	using value_type		= typename _AVLTreeVal::ValueType;
+	using difference_type	= typename _AVLTreeVal::DifferenceType;
+	using pointer			= typename _AVLTreeVal::Pointer;
 	using reference			= value_type&;
 
 	[[nodiscard]] reference operator*() const noexcept {
-		return const_cast<reference>(_BaseIter::operator*());
+		return const_cast<reference>(_BaseIter::operator*()); // UB: nullptr or end() dereference
 	}
 
 	[[nodiscard]] pointer operator->() const noexcept {
-		return static_cast<pointer>(std::addressof(**this));
+		return static_cast<pointer>(std::addressof(**this)); // UB: nullptr or end() dereference
 	}
 
 	_AVLTreeIterator& operator++() noexcept {
@@ -155,14 +154,12 @@ public:
 	}
 };
 
-
-template<class ValueType>
+template<class _ValueType>
 struct _AVLTreeNode {
 	using NodePointer	= _AVLTreeNode*;
-
-	using value_type	= ValueType;
-	using height_type	= uint8_t;
-	using balance_type	= int8_t;
+	using ValueType		= _ValueType;
+	using HeightType	= uint8_t;
+	using BalanceType	= int8_t;
 
 	_AVLTreeNode() = default;
 
@@ -237,86 +234,84 @@ struct _AVLTreeNode {
 	NodePointer right;	// 8 bytes pointer
 	NodePointer parent;	// 8 bytes pointer
 
-	value_type	value;	// sizeof(value_type)
-	height_type	height; // 1 byte, assuming AVL tree height <= 255
+	ValueType	value;	// sizeof(ValueType)
+	HeightType	height; // 1 byte, assuming AVL tree height <= 255
 	
 	bool isHead;		// 1 byte boolean
 };
 
-template<class NodeType>
+template<class _NodeType>
 struct _AVLTreeTempNode {
 	// Struct to temporarily store a constructed node
-	using Node			= NodeType;
-	using NodePointer	= typename Node::NodePointer;
-
-	using value_type	= typename Node::value_type;
+	using NodeType		= _NodeType;
+	using NodePointer	= typename NodeType::NodePointer;
+	using ValueType		= typename NodeType::ValueType;
 
 
 	template<class... Args>
 	explicit _AVLTreeTempNode(Args&&... args)
-		: node(nullptr) { // Prevent double delete when allocation throws
-		node = Node::constructNode(std::forward<Args>(args)...);
+		: ptr(nullptr) { // Prevent double delete when allocation throws
+		ptr = NodeType::constructNode(std::forward<Args>(args)...);
 	}
 
 	_AVLTreeTempNode(const _AVLTreeTempNode&)				= delete;
 	_AVLTreeTempNode& operator=(const _AVLTreeTempNode&)	= delete;
 
 	~_AVLTreeTempNode() noexcept {
-		if (node) {
-			Node::freeNode(this->release());
+		if (ptr) {
+			NodeType::freeNode(this->release());
 		}
 	}
 
 	[[nodiscard]] NodePointer release() noexcept {
 		// Give up node ownership and return contained pointer
-		return std::exchange(node, nullptr);
+		return std::exchange(ptr, nullptr);
 	}
 
-	[[nodiscard]] const value_type& getValue() noexcept {
-		return node->value;
+	[[nodiscard]] const ValueType& getValue() noexcept {
+		return ptr->value;
 	}
 
-	NodePointer node;
+	NodePointer ptr;
 };
 
 enum _NodeChild : uint8_t {
 	LEFT, RIGHT
 };
 
-template<class NodePointer>
+template<class _NodePointer>
 struct _NodeLocation {
-	NodePointer	parent; // Parent node under which new node will be inserted
-	_NodeChild	child;	// Whether to insert as left or right child
+	_NodePointer parent;	// Parent node under which new node will be inserted
+	_NodeChild child;		// Whether to insert as left or right child
 };
 
-template<class NodePointer>
+template<class _NodePointer>
 struct _NodeFindResult {
-	NodePointer	bound;						// Lower bound of the find result, used for duplicate checking
-	_NodeLocation<NodePointer> location;	// Location to insert new node
+	_NodePointer bound;						// Lower bound of the find result, used for duplicate checking
+	_NodeLocation<_NodePointer> location;	// Location to insert new node
 };
 
-template<class NodePointer>
+template<class _NodePointer>
 struct _NodeFindHintResult {
-	_NodeLocation<NodePointer> location; // Location to insert new node
+	_NodeLocation<_NodePointer> location; // Location to insert new node
 	bool isDuplicate;
 };
 
-template<class ValueType, class SizeType, class DiffType, class Pointer, class ConstPointer, class NodeType>
+template<class _ValueType, class _SizeType, class _DifferenceType, class _Pointer, class _ConstPointer, class _NodeType>
 class _AVLTreeValue {
 public:
-	using Node			= NodeType;
-	using NodePointer	= typename Node::NodePointer;
+	using NodeType		= _NodeType;
+	using NodePointer	= typename NodeType::NodePointer;
+	using HeightType	= typename NodeType::HeightType;
+	using BalanceType	= typename NodeType::BalanceType;
 
-	using height_type	= typename Node::height_type;
-	using balance_type	= typename Node::balance_type;
-
-	using value_type		= ValueType;
-	using size_type			= SizeType;
-	using difference_type	= DiffType;
-	using pointer			= Pointer;
-	using const_pointer		= ConstPointer;
-	using reference			= value_type&;
-	using const_reference	= const value_type&;
+	using ValueType			= _ValueType;
+	using SizeType			= _SizeType;
+	using DifferenceType	= _DifferenceType;
+	using Pointer			= _Pointer;
+	using ConstPointer		= _ConstPointer;
+	using Reference			= ValueType&;
+	using ConstReference	= const ValueType&;
 
 	_AVLTreeValue() noexcept
 		: head(), size(0) {
@@ -338,17 +333,17 @@ public:
 		return node;
 	}
 
-	[[nodiscard]] static height_type getHeight(const NodePointer node) noexcept {
+	[[nodiscard]] static HeightType getHeight(const NodePointer node) noexcept {
 		// Get node height
-		return static_cast<height_type>(node ? node->height : 0);
+		return static_cast<HeightType>(node ? node->height : 0);
 	}
 
-	[[nodiscard]] static balance_type getBalanceFactor(const NodePointer node) noexcept {
+	[[nodiscard]] static BalanceType getBalanceFactor(const NodePointer node) noexcept {
 		// Get balance factor at node
 		if (node) {
 			const auto leftHeight	= _AVLTreeValue::getHeight(node->left);
 			const auto rightHeight	= _AVLTreeValue::getHeight(node->right);
-			return static_cast<balance_type>(rightHeight - leftHeight);
+			return static_cast<BalanceType>(rightHeight - leftHeight);
 		}
 		return 0;
 	}
@@ -357,7 +352,7 @@ public:
 		// Update node height
 		const auto leftHeight	= _AVLTreeValue::getHeight(node->left);
 		const auto rightHeight	= _AVLTreeValue::getHeight(node->right);
-		node->height = static_cast<height_type>(std::max(leftHeight, rightHeight) + 1);
+		node->height = static_cast<HeightType>(std::max(leftHeight, rightHeight) + 1);
 	}
 
 	void rotateLeft(const NodePointer oldRoot) noexcept {
@@ -524,11 +519,10 @@ public:
 		// Clear entire subtree at node recursively
 		while (node) {
 			this->clear(node->right);
-			Node::freeNode(std::exchange(node, node->left));
+			NodeType::freeNode(std::exchange(node, node->left));
 		}
 	}
 
-	NodePointer head;
 	/*
 		Serve as the end() node for tree traversal
 
@@ -536,7 +530,8 @@ public:
 		head->right:	points to the rightmost node (max node)
 		head->parent:	points to the actual root node
 	*/
-	size_type size; // Total number of nodes
+	NodePointer head;
+	SizeType size;
 };
 
 template<class T, class Comp = std::less<>>
@@ -551,24 +546,24 @@ public:
 	using const_reference	= const T&;
 
 private:
-	using _Node			= _AVLTreeNode<value_type>;
-	using _NodePointer	= typename _Node::NodePointer;
+	using _NodeType		= _AVLTreeNode<value_type>;
+	using _NodePointer	= typename _NodeType::NodePointer;
 
-	using _AVLTreeVal	= _AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _Node>;
+	using _AVLTreeVal	= _AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
 
 	enum _CopyStrategy {
 		COPY, MOVE
 	};
 
 public:
-	using Iterator		= _AVLTreeConstIterator<_AVLTreeVal>;
-	using ConstIterator = _AVLTreeConstIterator<_AVLTreeVal>;
+	using iterator			= _AVLTreeConstIterator<_AVLTreeVal>;
+	using const_iterator	= _AVLTreeConstIterator<_AVLTreeVal>;
 
 public:
 	AVLTree()
 		: _data() {
 		// Construct empty tree
-		_data.head = _Node::constructHead();
+		_data.head = _NodeType::constructHead();
 	}
 
 	AVLTree(const AVLTree& other)
@@ -578,30 +573,30 @@ public:
 
 	~AVLTree() noexcept {
 		_data.clear(_data.head->parent);
-		_Node::freeEmptyNode(_data.head);
+		_NodeType::freeEmptyNode(_data.head);
 	}
 
-	[[nodiscard]] Iterator begin() noexcept {
-		return Iterator(_data.head->left);
+	[[nodiscard]] iterator begin() noexcept {
+		return iterator(_data.head->left);
 	}
 
-	[[nodiscard]] ConstIterator begin() const noexcept {
-		return ConstIterator(_data.head->left);
+	[[nodiscard]] const_iterator begin() const noexcept {
+		return const_iterator(_data.head->left);
 	}
 
-	[[nodiscard]] Iterator end() noexcept {
-		return Iterator(_data.head);
+	[[nodiscard]] iterator end() noexcept {
+		return iterator(_data.head);
 	}
 
-	[[nodiscard]] ConstIterator end() const noexcept {
-		return ConstIterator(_data.head);
+	[[nodiscard]] const_iterator end() const noexcept {
+		return const_iterator(_data.head);
 	}
 
-	[[nodiscard]] ConstIterator cbegin() const noexcept {
+	[[nodiscard]] const_iterator cbegin() const noexcept {
 		return this->begin();
 	}
 
-	[[nodiscard]] ConstIterator cend() const noexcept {
+	[[nodiscard]] const_iterator cend() const noexcept {
 		return this->end();
 	}
 
@@ -626,7 +621,7 @@ public:
 	}
 
 	[[nodiscard]] size_type maxSize() const noexcept {
-		return static_cast<size_type>(-1) / sizeof(_Node);
+		return static_cast<size_type>(-1) / sizeof(_NodeType);
 	}
 
 	[[nodiscard]] bool isEmpty() const noexcept {
@@ -634,34 +629,34 @@ public:
 	}
 
 	template<class... Args>
-	std::pair<Iterator, bool> emplace(Args&&... args) {
+	std::pair<iterator, bool> emplace(Args&&... args) {
 		// Insert by constructing in place using args
 		const auto result = this->_emplace(std::forward<Args>(args)...);
-		return std::make_pair(Iterator(result.first), result.second);
+		return std::make_pair(iterator(result.first), result.second);
 	}
 
 	template<class... Args>
-	Iterator emplaceHint(ConstIterator hint, Args&&... args) {
+	iterator emplaceHint(const_iterator hint, Args&&... args) {
 		// Insert with hint by constructing in place using args
-		return Iterator(this->_emplaceHint(hint.getPointer(), std::forward<Args>(args)...));
+		return iterator(this->_emplaceHint(hint.getPointer(), std::forward<Args>(args)...));
 	}
 
-	std::pair<Iterator, bool> insert(const value_type& val) {
+	std::pair<iterator, bool> insert(const value_type& val) {
 		// Insert by copying val
 		return this->emplace(val);
 	}
 
-	std::pair<Iterator, bool> insert(value_type&& val) {
+	std::pair<iterator, bool> insert(value_type&& val) {
 		// Insert by moving val
 		return this->emplace(std::move(val));
 	}
 
-	Iterator insert(ConstIterator hint, const value_type& val) {
+	iterator insert(const_iterator hint, const value_type& val) {
 		// Insert with hint by copying val
 		return this->emplaceHint(hint, val);
 	}
 
-	Iterator insert(ConstIterator hint, value_type&& val) {
+	iterator insert(const_iterator hint, value_type&& val) {
 		// Insert with hint by moving val
 		return this->emplaceHint(hint, std::move(val));
 	}
@@ -676,88 +671,182 @@ public:
 	}
 
 	void insert(std::initializer_list<value_type> initList) {
-		// Insert all of initList
+		// Insert initList
 		this->insert(initList.begin(), initList.end());
 	}
 
-	Iterator erase(ConstIterator pos) noexcept {
+	iterator erase(const_iterator pos) noexcept {
 		// Erase at pos
-		return Iterator(this->_erase(pos)); // UB
+		return iterator(this->_erase(pos)); // UB
 	}
 
-	Iterator erase(ConstIterator first, ConstIterator last) noexcept {
+	iterator erase(const_iterator first, const_iterator last) noexcept {
 		// Erase range [first, last)
-		const auto begin = this->begin();
-		if (first == this->begin() && last == this->end()) { // Erase entire tree
-			this->clear();
-			return static_cast<Iterator>(last);
-		}
-		// Erase nodes one at a time
-		while (first != last) {
-			this->_erase(first++);
-		}
-		return static_cast<Iterator>(last);
+		return iterator(this->_erase(first, last)); // UB
 	}
 
 	bool erase(const value_type& key) noexcept {
-		const auto result = this->_findNodeLocation(key);
+		// Erase key
+		const auto result = this->_findLowerBound(key);
 		if (!this->_isDuplicateKey(result.bound, key)) { // Key does not exist
 			return false;
 		}
-		this->_erase(ConstIterator(result.bound));
+		this->_erase(const_iterator(result.bound));
 		return true;
 	}
 
-	[[nodiscard]] Iterator find(const value_type& key) {
-		return Iterator(this->_find(key));
-	}
+	/*
+		STL requires C++23 for heterogeneous erase
+		Use with caution
 
-	[[nodiscard]] ConstIterator find(const value_type& key) const {
-		return ConstIterator(this->_find(key));
-	}
-
+		Intentional SFINAE with Comp
+	*/
 	template<class KeyType, class Compare = Comp,
-		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
-	[[nodiscard]] Iterator find(const KeyType& key) {
-		return Iterator(this->_find(key));
+		std::enable_if_t<
+			traits::IsTransparent<Comp> &&
+			!std::is_convertible_v<KeyType, iterator> &&
+			!std::is_convertible_v<KeyType, const_iterator>, int> = 0>
+	bool erase(const KeyType& key) noexcept {
+		// Erase key
+		const auto result = this->_findLowerBound(key);
+		if (!this->_isDuplicateKey(result.bound, key)) { // Key does not exist
+			return false;
+		}
+		this->_erase(const_iterator(result.bound));
+		return true;
 	}
-
-	template<class KeyType, class Compare = Comp,
-		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
-	[[nodiscard]] ConstIterator find(const KeyType& key) const {
-		return ConstIterator(this->_find(key));
-	}
-
-	// swap
-	// extract
-	// contains
-	// count
-	// lowerBound
-	// upperBound
-	// equalRange
-	// merge
 
 	void clear() noexcept {
-		// Clear entire tree and reset head node
+		// Erase all
 		_data.clear(std::exchange(_data.head->parent, nullptr));
 		_data.head->left	= _data.head;
 		_data.head->right	= _data.head;
 		_data.size = 0;
 	}
 
-#if __cplusplus >= 201703L
+	void swap(AVLTree& other) noexcept {
+		// Swap contents with other
+		using std::swap;
+		if (this != std::addressof(other)) {
+			swap(_data.head, other._data.head); // ADL
+			std::swap(_data.size, other._data.size);
+		}
+	}
 
-public:
-	using NodeHandle = _NodeHandle<_Node, _NodeHandleSetBase, value_type>;
+	[[nodiscard]] iterator find(const value_type& key) {
+		// Find key
+		return iterator(this->_find(key));
+	}
 
-	NodeHandle extract(const ConstIterator pos) {
+	[[nodiscard]] const_iterator find(const value_type& key) const {
+		// Find key
+		return const_iterator(this->_find(key));
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] iterator find(const KeyType& key) {
+		// Find element equivalent to key
+		return iterator(this->_find(key));
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] const_iterator find(const KeyType& key) const {
+		// Find element equivalent to key
+		return const_iterator(this->_find(key));
+	}
+
+	[[nodiscard]] bool contains(const value_type& key) const {
+		// Check if tree contains key
+		return this->_isDuplicateKey(this->_findLowerBound(key).bound, key);
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] bool contains(const KeyType& key) const {
+		// Check if tree contains element equivalent to key
+		return this->_isDuplicateKey(this->_findLowerBound(key).bound, key);
+	}
+
+	[[nodiscard]] size_type count(const value_type& key) const {
+		// Count occurrences of key
+		return this->_isDuplicateKey(this->_findLowerBound(key).bound, key);
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] size_type count(const KeyType& key) const {
+		// Count occurrences of value equivalent to key
+		return this->_isDuplicateKey(this->_findLowerBound(key).bound, key);
+	}
+	
+	[[nodiscard]] iterator lowerBound(const value_type& key) {
+		// Find the first element not less than key
+		return iterator(this->_findLowerBound(key).bound);
+	}
+
+	[[nodiscard]] const_iterator lowerBound(const value_type& key) const {
+		// Find the first element not less than key
+		return const_iterator(this->_findLowerBound(key).bound);
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] iterator lowerBound(const KeyType& key) {
+		// Find the first equivalent element not less than key
+		return iterator(this->_findLowerBound(key).bound);
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] const_iterator lowerBound(const KeyType& key) const {
+		// Find the first equivalent element not less than key
+		return const_iterator(this->_findLowerBound(key).bound);
+	}
+
+	[[nodiscard]] iterator upperBound(const value_type& key) {
+		// Find the first element greater than key
+		return iterator(this->_findUpperBound(key).bound);
+	}
+
+	[[nodiscard]] const_iterator upperBound(const value_type& key) const {
+		// Find the first element greater than key
+		return const_iterator(this->_findUpperBound(key).bound);
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] iterator upperBound(const KeyType& key) {
+		// Find the first equivalent element greater than key
+		return iterator(this->_findUpperBound(key).bound);
+	}
+
+	template<class KeyType, class Compare = Comp,
+		std::enable_if_t<traits::IsTransparent<Compare>, int> = 0>
+	[[nodiscard]] const_iterator upperBound(const KeyType& key) const {
+		// Find the first equivalent element greater than key
+		return const_iterator(this->_findUpperBound(key).bound);
+	}
+
+	// equalRange
+	// merge
+
+#if _MSVC_LANG >= 201703L
+	using NodeHandle = _NodeHandle<_NodeType, _NodeHandleSetBase, value_type>;
+
+	NodeHandle extract(const const_iterator pos) {
 		const auto result = _data.extract(pos);
 		return NodeHandle::make(result.first);
 	}
 
-	/*NodeHandle extract(const value_type& key) {
-		
-	}*/
+	NodeHandle extract(const value_type& key) {
+		const const_iterator pos = this->find(key);
+		if (pos == end()) {
+			return NodeHandle{};
+		}
+		return this->extract(pos);
+	}
 #endif // Has C++17
 
 	// Testing purpose only
@@ -827,9 +916,9 @@ private:
 	_NodePointer _copyNode(value_type& val, _CopyStrategy strat) {
 		// Construct node by copying or moving val, depending on strat
 		if (strat == _CopyStrategy::COPY) {
-			return _Node::constructNode(val);
+			return _NodeType::constructNode(val);
 		}
-		return _Node::constructNode(std::move(val));
+		return _NodeType::constructNode(std::move(val));
 	}
 
 	_NodePointer _copySubtree(_NodePointer oldRoot, _NodePointer newHead, _CopyStrategy strat) {
@@ -862,15 +951,19 @@ private:
 		}
 	}
 
-	[[nodiscard]] bool _isDuplicateKey(const _NodePointer bound, const value_type& key) const {
+	template<class KeyType>
+	[[nodiscard]] bool _isDuplicateKey(const _NodePointer bound, const KeyType& key) const {
 		// Check if key is duplicate by comparing with bound
-		return !bound->isHead && !(key < bound->value);
+		return !bound->isHead && !(_comp(key, bound->value));
 	}
 
-	[[nodiscard]] _NodeFindResult<_NodePointer> _findNodeLocation(const value_type& key) const {
+	template<class KeyType>
+	[[nodiscard]] _NodeFindResult<_NodePointer> _findLowerBound(const KeyType& key) const {
 		/*
+			Find the smallest (or leftmost in-order) node that is not less than key (or does not satisfy _comp(node value, key))
+			
 			Traverse the whole path downwards from root until nullptr is reached.
-			At each node, perform only 01 comparison using operator<() between key and node value.
+			At each node, perform exactly 01 comparison using _comp::operator() on key and node value.
 
 			Let N be the total number of nodes:
 			Best case:		O(1),		using 01 comparison (root case)
@@ -880,7 +973,7 @@ private:
 		_NodeFindResult<_NodePointer> result{ _data.head, { _data.head->parent, _NodeChild::RIGHT } };
 		for (_NodePointer currNode = result.location.parent; currNode;) {
 			result.location.parent = currNode;
-			if (currNode->value < key) {
+			if (_comp(currNode->value, key)) {
 				result.location.child	= _NodeChild::RIGHT;
 				currNode				= currNode->right;
 			}
@@ -893,31 +986,51 @@ private:
 		return result;
 	}
 
-	[[nodiscard]] _NodeFindHintResult<_NodePointer> _findNodeLocationHint(const _NodePointer hintNode, const value_type& key) const {
+	template<class KeyType>
+	[[nodiscard]] _NodeFindResult<_NodePointer> _findUpperBound(const KeyType& key) const {
+		// Find the smallest (or leftmost in-order) node that is strictly greater than key (or satisfies _comp(key, node value))
+		_NodeFindResult<_NodePointer> result{ _data.head, { _data.head->parent, _NodeChild::RIGHT } };
+		for (_NodePointer currNode = result.location.parent; currNode;) {
+			result.location.parent = currNode;
+			if (_comp(key, currNode->value)) {
+				result.location.child	= _NodeChild::LEFT;
+				result.bound			= currNode;
+				currNode				= currNode->left;
+			}
+			else {
+				result.location.child	= _NodeChild::RIGHT;
+				currNode				= currNode->right;
+			}
+		}
+		return result;
+	}
+
+	template<class KeyType>
+	[[nodiscard]] _NodeFindHintResult<_NodePointer> _findHint(const _NodePointer hintNode, const KeyType& key) const {
 		// Find node insert location using hintNode
 		const _NodePointer head = _data.head;
 		if (hintNode == head->left) { // Insert at begin as leftmost node
-			if (key < hintNode->value) {
+			if (_comp(key, hintNode->value)) {
 				return { { hintNode, _NodeChild::LEFT }, false };
 			}
 		}
 		else if (hintNode->isHead) { // Insert at end as rightmost node
-			if (!head->parent || head->right->value < key) {
+			if (!head->parent || _comp(head->right->value, key)) {
 				return { { head->right, _NodeChild::RIGHT }, false };
 			}
 		}
-		else if (key < hintNode->value) { // key < *hintNode
-			const _NodePointer prevNode = std::prev(ConstIterator(hintNode), 1).getPointer();
-			if (prevNode->value < key) { // *(--hintNode) < key < *hintNode, insert here
+		else if (_comp(key, hintNode->value)) { // key < *hintNode
+			const _NodePointer prevNode = std::prev(const_iterator(hintNode), 1).getPointer();
+			if (_comp(prevNode->value, key)) { // *(--hintNode) < key < *hintNode, insert here
 				if (!prevNode->right) {
 					return { { prevNode, _NodeChild::RIGHT }, false };
 				}
 				return { { hintNode, _NodeChild::LEFT }, false };
 			}
 		}
-		else if (hintNode->value < key) { // key > *hintNode
-			const _NodePointer nextNode = std::next(ConstIterator(hintNode), 1).getPointer();
-			if (nextNode->isHead || key < nextNode->value) { // *hintNode < key < *(++hintNode), insert here
+		else if (_comp(hintNode->value, key)) { // key > *hintNode
+			const _NodePointer nextNode = std::next(const_iterator(hintNode), 1).getPointer();
+			if (nextNode->isHead || _comp(key, nextNode->value)) { // *hintNode < key < *(++hintNode), insert here
 				if (!hintNode->right) {
 					return { { hintNode, _NodeChild::RIGHT }, false };
 				}
@@ -928,7 +1041,7 @@ private:
 			return { { hintNode, _NodeChild::LEFT, }, true };
 		}
 		// Incorrect hint, key is not in the proximity of *hintNode. Resort to the usual find method
-		const auto result = this->_findNodeLocation(key);
+		const auto result = this->_findLowerBound(key);
 		if (this->_isDuplicateKey(result.bound, key)) {
 			return { { result.bound, _NodeChild::LEFT }, true };
 		}
@@ -938,10 +1051,10 @@ private:
 	template<class... Args>
 	std::pair<_NodePointer, bool> _emplace(Args&&... args) {
 		// Insert by constructing node inplace using args
-		_AVLTreeTempNode<_Node> tempNode(std::forward<Args>(args)...); // Create temporary node for initial node search
+		_AVLTreeTempNode<_NodeType> tempNode(std::forward<Args>(args)...); // Create temporary node for initial node search
 		const auto& key = tempNode.getValue();
 
-		const auto result = this->_findNodeLocation(key); // Find insert location
+		const auto result = this->_findLowerBound(key); // Find insert location
 		if (this->_isDuplicateKey(result.bound, key)) { // Duplicate check
 			return std::make_pair(result.bound, false);
 		}
@@ -953,10 +1066,10 @@ private:
 	template<class... Args>
 	_NodePointer _emplaceHint(const _NodePointer hintNode, Args&&... args) {
 		// Insert by constructing node inplace using args with given hint
-		_AVLTreeTempNode<_Node> tempNode(std::forward<Args>(args)...);
+		_AVLTreeTempNode<_NodeType> tempNode(std::forward<Args>(args)...);
 		const auto& key = tempNode.getValue();
 
-		const auto result = this->_findNodeLocationHint(hintNode, key);
+		const auto result = this->_findHint(hintNode, key);
 		if (result.isDuplicate) {
 			return result.location.parent;
 		}
@@ -965,16 +1078,31 @@ private:
 		return _data.insert(result.location, newNode);
 	}
 
-	_NodePointer _erase(ConstIterator pos) noexcept {
+	_NodePointer _erase(const_iterator pos) noexcept {
 		// Erase node at pos, return the next in-order node
 		const auto result = _data.extract(pos); // UB
-		_Node::freeNode(result.first);
+		_NodeType::freeNode(result.first);
 		return result.second;
 	}
 
-	template<class T>
-	[[nodiscard]] _NodePointer _find(const T& key) const {
-		const auto result = this->_findNodeLocation(key);
+	_NodePointer _erase(const_iterator first, const_iterator last) noexcept {
+		// Erase range [first, last)
+		const auto begin = this->begin();
+		if (first == this->begin() && last == this->end()) { // Erase all elements
+			this->clear();
+			return last.getPointer();
+		}
+		// Erase nodes one at a time
+		while (first != last) {
+			this->_erase(first++); // UB
+		}
+		return last.getPointer();
+	}
+
+	template<class KeyType>
+	[[nodiscard]] _NodePointer _find(const KeyType& key) const {
+		// Find element equivalent to key
+		const auto result = this->_findLowerBound(key);
 		if (this->_isDuplicateKey(result.bound, key)) {
 			return result.bound;
 		}
@@ -983,5 +1111,6 @@ private:
 
 private:
 	_AVLTreeVal _data;
+	Comp		_comp;
 };
 #endif // ALV_TREE_H

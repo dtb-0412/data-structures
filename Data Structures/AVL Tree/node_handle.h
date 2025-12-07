@@ -5,9 +5,6 @@
 #include"memory.hpp"
 #include"utility.hpp"
 
-#include<iostream>
-using std::cout;
-
 template<class Iter, class NodeType>
 struct InsertReturnType {
 	Iter position; // Inserted node iterator
@@ -15,33 +12,34 @@ struct InsertReturnType {
 	NodeType node; // Node handle: Empty if inserted, otherwise contains the node that was not inserted
 };
 
-template<class DerivedType, class ValueType>
+template<class _DerivedType, class _ValueType>
 struct _NodeHandleSetBase {
-	using value_type = ValueType;
+	using ValueType = _ValueType;
 
-	value_type& value() const noexcept {
-		const auto& self = static_cast<const DerivedType&>(*this);
+	ValueType& value() const noexcept {
+		const auto& self = static_cast<const _DerivedType&>(*this);
 		return self.getPointer()->value;
 	}
 };
 
-template<class NodeType, template<class...> class Base, class... Types> // CRTP
-class _NodeHandle : public Base<_NodeHandle<NodeType, Base, Types...>, Types...> {
+template<class _NodeType, template<class...> class _Base, class... _Types> // CRTP
+class _NodeHandle : public _Base<_NodeHandle<_NodeType, _Base, _Types...>, _Types...> {
 	// Storage for a node from one of the node-based standard containers
 private:
-	using NodePointer = NodeType*;
+	using NodePointer = _NodeType*;
 	
 	_NodeHandle(const NodePointer ptr) noexcept
 		: _ptr(ptr) {}
 
 public:
-	_NodeHandle() noexcept {}
+	_NodeHandle() noexcept
+		: _ptr(nullptr) {}
 
 	_NodeHandle(const _NodeHandle&)				= delete;
 	_NodeHandle& operator=(const _NodeHandle&)	= delete;
 
 	_NodeHandle(_NodeHandle&& other) noexcept
-		: _ptr(std::exchange(_ptr, other._ptr)) {}
+		: _ptr(std::exchange(other._ptr, nullptr)) {}
 
 	_NodeHandle& operator=(_NodeHandle&& other) noexcept {
 		// Always clear node handle, even when self-moving
@@ -85,7 +83,7 @@ public:
 private:
 	void _clear() noexcept {
 		if (_ptr) {
-			NodeType::freeNode(std::exchange(_ptr, nullptr));
+			_NodeType::freeNode(std::exchange(_ptr, nullptr));
 		}
 	}
 

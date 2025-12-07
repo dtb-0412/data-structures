@@ -245,8 +245,8 @@ private:
 	using _FwdListVal	= _ForwardListValue<value_type, size_type, difference_type, pointer, const_pointer, _Node>;
 
 public:
-	using Iterator		= _ForwardListIterator<_FwdListVal>;
-	using ConstIterator	= _ForwardListConstIterator<_FwdListVal>;
+	using iterator			= _ForwardListIterator<_FwdListVal>;
+	using const_iterator	= _ForwardListConstIterator<_FwdListVal>;
 
 public:
 	ForwardList()
@@ -326,39 +326,39 @@ public:
 		this->clear();
 	}
 
-	[[nodiscard]] Iterator beforeBegin() noexcept {
-		return Iterator(_data.beforeHead());
+	[[nodiscard]] iterator beforeBegin() noexcept {
+		return iterator(_data.beforeHead());
 	}
 
-	[[nodiscard]] ConstIterator beforeBegin() const noexcept {
-		return ConstIterator(_data.beforeHead());
+	[[nodiscard]] const_iterator beforeBegin() const noexcept {
+		return const_iterator(_data.beforeHead());
 	}
 
-	[[nodiscard]] Iterator begin() noexcept {
-		return Iterator(_data.head);
+	[[nodiscard]] iterator begin() noexcept {
+		return iterator(_data.head);
 	}
 
-	[[nodiscard]] ConstIterator begin() const noexcept {
-		return ConstIterator(_data.head);
+	[[nodiscard]] const_iterator begin() const noexcept {
+		return const_iterator(_data.head);
 	}
 
-	[[nodiscard]] Iterator end() noexcept {
-		return Iterator(nullptr);
+	[[nodiscard]] iterator end() noexcept {
+		return iterator(nullptr);
 	}
 
-	[[nodiscard]] ConstIterator end() const noexcept {
-		return ConstIterator(nullptr);
+	[[nodiscard]] const_iterator end() const noexcept {
+		return const_iterator(nullptr);
 	}
 
-	[[nodiscard]] ConstIterator cbeforeBegin() const noexcept {
+	[[nodiscard]] const_iterator cbeforeBegin() const noexcept {
 		return this->beforeBegin();
 	}
 
-	[[nodiscard]] ConstIterator cbegin() const noexcept {
+	[[nodiscard]] const_iterator cbegin() const noexcept {
 		return this->begin();
 	}
 
-	[[nodiscard]] ConstIterator cend() const noexcept {
+	[[nodiscard]] const_iterator cend() const noexcept {
 		return this->end();
 	}
 
@@ -430,48 +430,48 @@ public:
 	}
 
 	template<class... Args>
-	Iterator emplaceAfter(ConstIterator pos, Args&&... args) {
+	iterator emplaceAfter(const_iterator pos, Args&&... args) {
 		// Insert after pos by constructing in place using args
 		this->_insertAfter(pos.getPointer(), std::forward<Args>(args)...);
-		return Iterator(pos.getPointer()->next);
+		return iterator(pos.getPointer()->next);
 	}
 
-	Iterator insertAfter(ConstIterator pos, const T& val) {
+	iterator insertAfter(const_iterator pos, const T& val) {
 		// Insert after pos by copying val
 		this->_insertAfter(pos.getPointer(), val);
-		return Iterator(pos.getPointer()->next);
+		return iterator(pos.getPointer()->next);
 	}
 
-	Iterator insertAfter(ConstIterator pos, T&& val) {
+	iterator insertAfter(const_iterator pos, T&& val) {
 		// Insert after pos by copying val
 		return this->emplaceAfter(pos, std::move(val));
 	}
 
-	Iterator insertAfter(ConstIterator pos, const size_type count, const T& val) {
+	iterator insertAfter(const_iterator pos, const size_type count, const T& val) {
 		// Insert count * val after pos
 		if (count != 0) {
 			_ForwardListInsertOperation<_FwdListVal> insertOp;
 			insertOp.appendN(count, val);
-			return Iterator(insertOp.attachAfter(pos.getPointer()));
+			return iterator(insertOp.attachAfter(pos.getPointer()));
 		}
-		return static_cast<Iterator>(pos);
+		return static_cast<iterator>(pos);
 	}
 
 	template<class InputIter,
 		std::enable_if_t<traits::IsInputIter<InputIter>, bool> = true>
-	Iterator insertAfter(ConstIterator pos, const InputIter first, const InputIter last) {
+	iterator insertAfter(const_iterator pos, const InputIter first, const InputIter last) {
 		// Insert range [first, last) after pos
 		_NodePointer node = pos.getPointer();
 		if (first != last) {
 			_ForwardListInsertOperation<_FwdListVal> insertOp;
 			insertOp.appendRange(first, last);
-			return Iterator(insertOp.attachAfter(pos.getPointer()));
+			return iterator(insertOp.attachAfter(pos.getPointer()));
 		}
-		return static_cast<Iterator>(pos);
+		return static_cast<iterator>(pos);
 	}
 
-	Iterator insertAfter(ConstIterator pos, std::initializer_list<T> initList) {
-		// Insert values from initList after pos
+	iterator insertAfter(const_iterator pos, std::initializer_list<T> initList) {
+		// Insert initList after pos
 		return this->insertAfter(pos, initList.begin(), initList.end());
 	}
 
@@ -480,13 +480,13 @@ public:
 		this->_eraseAfter(_data.beforeHead()); // UB
 	}
 
-	Iterator eraseAfter(ConstIterator pos) noexcept {
+	iterator eraseAfter(const_iterator pos) noexcept {
 		// Erase after pos
 		this->_eraseAfter(pos.getPointer()); // UB
-		return Iterator(pos.getPointer()->next);
+		return iterator(pos.getPointer()->next);
 	}
 
-	Iterator eraseAfter(ConstIterator first, ConstIterator last) noexcept {
+	iterator eraseAfter(const_iterator first, const_iterator last) noexcept {
 		// Erase range (first, last)
 		_NodePointer currNode = first.getPointer();
 		_NodePointer lastNode = last.getPointer();
@@ -496,7 +496,7 @@ public:
 				_Node::freeNode(std::exchange(nextNode, currNode->next));
 			}
 		}
-		return Iterator(lastNode);
+		return iterator(lastNode);
 	}
 
 	void clear() noexcept {
@@ -506,15 +506,16 @@ public:
 		}
 	}
 
-	void swap(ForwardList& rhs) noexcept {
-		// Swap contents with rhs
+	void swap(ForwardList& other) noexcept {
+		// Swap contents with other
 		using std::swap;
-		if (this != std::addressof(rhs)) {
-			swap(_data.head, rhs._data.head); // ADL
+		if (this != std::addressof(other)) {
+			swap(_data.head, other._data.head); // ADL
+			std::swap(_data.size, other._data.size);
 		}
 	}
 
-	void spliceAfter(ConstIterator pos, ForwardList<T>& other) noexcept {
+	void spliceAfter(const_iterator pos, ForwardList<T>& other) noexcept {
 		// Splice all of other after pos
 		if (this != std::addressof(other) && !other.isEmpty()) {
 			const auto first	= other.beforeBegin();
@@ -523,27 +524,27 @@ public:
 		}
 	}
 
-	void spliceAfter(ConstIterator pos, ConstIterator before) noexcept {
+	void spliceAfter(const_iterator pos, const_iterator before) noexcept {
 		// Splice range (before, before + 2) after pos
 		return this->_spliceAfter(pos.getPointer(), before.getPointer());
 	}
 
-	void spliceAfter(ConstIterator pos, ConstIterator first, ConstIterator last) noexcept {
+	void spliceAfter(const_iterator pos, const_iterator first, const_iterator last) noexcept {
 		// Splice range (first, last) after pos
 		return this->_spliceAfter(pos.getPointer(), first.getPointer(), last.getPointer()); // UB
 	}
 
-	[[nodiscard]] ConstIterator find(const T& key) const noexcept {
-		// Find the first appearance of key
+	[[nodiscard]] const_iterator find(const T& key) const noexcept {
+		// Find the first occurence of key
 		_NodePointer currNode = _data.head;
 		while (currNode && currNode->value != key) {
 			currNode = currNode->next;
 		}
-		return ConstIterator(currNode);
+		return const_iterator(currNode);
 	}
 
 	[[nodiscard]] auto compare(const ForwardList& other) const noexcept {
-		// Compare with other node by node
+		// Compare with other by each element
 		_NodePointer firstNode = _data.head, secondNode = other._data.head;
 		for (; firstNode && secondNode; firstNode = firstNode->next, secondNode = secondNode->next) {
 			if (firstNode->value == secondNode->value) {
@@ -553,7 +554,7 @@ public:
 			return (firstNode->value < secondNode->value) ? std::strong_ordering::less : std::strong_ordering::greater;
 #else
 			return (firstNode->value < secondNode->value) ? -1 : 1;
-#endif // _MSVC_LANG >= 202002L
+#endif // Has C++20
 		}
 
 #if _MSVC_LANG >= 202002L
@@ -566,7 +567,7 @@ public:
 			return 0;
 		}
 		return (secondNode) ? -1 : 1;
-#endif // _MSVC_LANG >= 202002L
+#endif // Has C++20
 	}
 
 	[[nodiscard]] size_type count() const noexcept { // Deprecated
@@ -579,7 +580,7 @@ public:
 	}
 
 	[[nodiscard]] size_type count(const T& key) const noexcept {
-		// Count appearances of key
+		// Count occurences of key
 		return this->countIf([&](const T& val) -> bool { return val == key; }); // UB
 	}
 
@@ -596,12 +597,12 @@ public:
 	}
 
 	size_type remove(const T& key) noexcept {
-		// Remove appearances of key
+		// Remove occurences of key
 		return this->removeAfter(key, this->beforeBegin(), this->end()); // UB
 	}
 
-	size_type removeAfter(const T& key, ConstIterator first, ConstIterator last) noexcept {
-		// Remove appearances of key in range (first, last)
+	size_type removeAfter(const T& key, const_iterator first, const_iterator last) noexcept {
+		// Remove occurences of key in range (first, last)
 		return this->_removeIfAfter([&](const T& val) -> bool { return val == key; }, first.getPointer(), last.getPointer()); // UB
 	}
 
@@ -612,7 +613,7 @@ public:
 	}
 
 	template<class UnaryPred>
-	size_type removeIfAfter(UnaryPred pred, ConstIterator first, ConstIterator last) noexcept {
+	size_type removeIfAfter(UnaryPred pred, const_iterator first, const_iterator last) noexcept {
 		// Remove elements satisfying pred in range (first, last)
 		return this->_removeIfAfter(pred, first.getPointer(), last.getPointer()); // UB
 	}
@@ -904,5 +905,5 @@ template<class T>
 [[nodiscard]] bool operator>=(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
 	return !(lhs < rhs);
 }
-#endif // _MSVC_LANG >= 202002L
+#endif // Has C++20
 #endif // FORWARD_LIST_HPP
