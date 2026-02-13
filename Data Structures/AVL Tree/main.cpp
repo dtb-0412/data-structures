@@ -57,26 +57,14 @@ public:
 }
 
 int main() {
-	std::vector<TYPE> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
-	std::set<IntWrapper, std::less<>> set;
-	AVLTree<IntWrapper> tree;
+	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
+
+	AVLTree<TYPE> tree;
 	for (const auto& val : data) {
-		set.emplace(val);
 		tree.emplace(val);
 	}
-	tree.print(Traversal::IN);
 
-	cout << "AVLTree::contains():\n";
-	int key = 6;
-	if (tree.contains(key)) {
-		cout << "Tree contains " << key << "\n";
-	}
-	else {
-		cout << "Tree does not contain " << key << "\n";
-	}
-
-	const auto nh = tree.extract(IntWrapper(24));
-	cout << nh.value() << " extracted from tree.\n";
+	tree.print(TreeOrder::LEVEL_ORDER);
 
 	cout << "\nPress Enter to exit...";
 	cin.get();
@@ -88,4 +76,9 @@ int main() {
 /*
 Nodes:	5 4 8 3 6 13 12 24
 Height: 4 2 3 1 1 2  1  1
+Line:
+5
+4 8
+3 6 13
+12 24
 */

@@ -2,18 +2,16 @@
 #ifndef ALV_TREE_H
 #define ALV_TREE_H
 
-#include<queue>
 #include<iostream>
 #include<functional>
+#include<queue>
+#include<stdexcept>
 
 #include"node_handle.h"
-#include"memory.hpp"
 #include"type_traits.hpp"
 
-using std::cout;
-
-enum Traversal {
-	PRE, IN, POST, LEVEL, LEVEL_H
+enum TreeOrder {
+	PRE_ORDER, IN_ORDER, POST_ORDER, LEVEL_ORDER
 };
 
 template<class _AVLTreeVal>
@@ -30,17 +28,17 @@ public:
 	using reference			= const value_type&;
 
 	_AVLTreeConstIterator() noexcept
-		: _ptr() {}
+		: ptr() {}
 
 	_AVLTreeConstIterator(const _NodePointer ptr) noexcept
-		: _ptr(ptr) {}
+		: ptr(ptr) {}
 
 	[[nodiscard]] _NodePointer getPointer() const noexcept {
-		return _ptr;
+		return ptr;
 	}
 
 	[[nodiscard]] reference operator*() const noexcept {
-		return _ptr->value; // UB: nullptr or end() dereference
+		return ptr->value; // UB: nullptr or end() dereference
 	}
 
 	[[nodiscard]] pointer operator->() const noexcept {
@@ -48,18 +46,18 @@ public:
 	}
 
 	_AVLTreeConstIterator& operator++() noexcept {
-		if (!_ptr->right) { // Climb upwards, look for right subtree
-			for (_NodePointer currNode = _ptr->parent;;) {
+		if (!ptr->right) { // Climb upwards, look for right subtree
+			for (_NodePointer currNode = ptr->parent;;) {
 				// Stop when reaching head or going upwards from a left subtree for the first time
-				if (currNode->isHead || _ptr != currNode->right) {
-					_ptr = currNode; // Goes from the rightmost node to head for end()
+				if (currNode->isHead || ptr != currNode->right) {
+					ptr = currNode; // Goes from the rightmost node to head for end()
 					break;
 				}
-				_ptr = std::exchange(currNode, currNode->parent);
+				ptr = std::exchange(currNode, currNode->parent);
 			}
 		}
 		else { // Goes to the leftmost node of right subtree
-			_ptr = _AVLTreeVal::min(_ptr->right);
+			ptr = _AVLTreeVal::min(ptr->right);
 		}
 		return *this;
 	}
@@ -71,23 +69,23 @@ public:
 	}
 
 	_AVLTreeConstIterator& operator--() noexcept {
-		if (_ptr->isHead) { // Goes back from end() to the rightmost node
-			_ptr = _ptr->right;
+		if (ptr->isHead) { // Goes back from end() to the rightmost node
+			ptr = ptr->right;
 		}
-		else if (!_ptr->left) {
-			for (_NodePointer currNode = _ptr->parent;;) {
+		else if (!ptr->left) {
+			for (_NodePointer currNode = ptr->parent;;) {
 				// Stop when reaching head or going upwards from a right subtree for the first time
-				if (currNode->isHead || _ptr != currNode->left) {
-					if (!_ptr->isHead) {
-						_ptr = currNode;
+				if (currNode->isHead || ptr != currNode->left) {
+					if (!ptr->isHead) {
+						ptr = currNode;
 					}
 					break;
 				}
-				_ptr = std::exchange(currNode, currNode->parent);
+				ptr = std::exchange(currNode, currNode->parent);
 			}
 		}
 		else { // Goes to the rightmost node of left subtree
-			_ptr = _AVLTreeVal::max(_ptr->left);
+			ptr = _AVLTreeVal::max(ptr->left);
 		}
 		return *this;
 	}
@@ -99,15 +97,15 @@ public:
 	}
 
 	[[nodiscard]] bool operator==(const _AVLTreeConstIterator& other) const noexcept {
-		return _ptr == other._ptr;
+		return ptr == other.ptr;
 	}
 
 	[[nodiscard]] bool operator!=(const _AVLTreeConstIterator& other) const noexcept {
 		return !(*this == other);
 	}
 
-private:
-	_NodePointer _ptr;
+public:
+	_NodePointer ptr;
 };
 
 template<class _AVLTreeVal>
@@ -422,8 +420,10 @@ public:
 		return false;
 	}
 
-	void fixTree(NodePointer node) noexcept {
+	void fixTree(NodePointer node, NodePointer newNode) noexcept {
 		// Travel upwards from node to root, update node height and rebalance if needed
+		_AVLTreeValue::updateHeight(newNode); // Reset node height for correct rebalancing
+		
 		while (true) {
 			if (node == head) { // Reach head before rebalancing
 				return;
@@ -466,7 +466,7 @@ public:
 			}
 		}
 
-		this->fixTree(location.parent);
+		this->fixTree(location.parent, newNode);
 		return newNode;
 	}
 
@@ -511,7 +511,7 @@ public:
 			parent->replaceChild(extracted, childNode);
 		}
 
-		this->fixTree(std::exchange(extracted->parent, nullptr));
+		this->fixTree(std::exchange(extracted->parent, nullptr), extracted);
 		return std::make_pair(extracted, nextNode);
 	}
 
@@ -829,29 +829,112 @@ public:
 		return const_iterator(this->_findUpperBound(key).bound);
 	}
 
-	// equalRange
-	// merge
+	template<class, class>
+	friend class AVLTree;
+
+	template<class OtherCompare>
+	void merge(AVLTree<T, OtherCompare>& other) {
+		// Merge other into *this, leaving other empty
+		if constexpr (std::is_same_v<AVLTree, AVLTree<T, OtherCompare>>) {
+			if (this == std::addressof(other)) {
+				return;
+			}
+		}
+
+		for (auto iter = other.begin(); iter != other.end();) {
+			const auto currNode = iter.ptr;
+			++iter; // Important: increment iterator before extraction
+			
+			_NodeFindResult<_NodePointer> result = this->_findLowerBound(currNode->value);
+			if (this->_isDuplicateKey(result.bound, currNode->value)) {
+				continue;
+			}
+
+			this->_checkMaxSize();
+			// Extract from other and reset links
+			const auto extracted	= other._data.extract(const_iterator(currNode)).first;
+			extracted->left			= nullptr;
+			extracted->right		= nullptr;
+			// Insert back into *this
+			_data.insert(result.location, extracted); // Handle extracted->parent and extracted->height
+		}
+	}
+
+	template<class OtherCompare>
+	void merge(AVLTree<T, OtherCompare>&& other) {
+		// Merge other into *this, leaving other empty
+		this->merge(other);
+	}
 
 #if _MSVC_LANG >= 201703L
 	using NodeHandle = _NodeHandle<_NodeType, _NodeHandleSetBase, value_type>;
 
 	NodeHandle extract(const const_iterator pos) {
+		// Extract node at pos, return its NodeHandle
 		const auto result = _data.extract(pos);
 		return NodeHandle::make(result.first);
 	}
 
 	NodeHandle extract(const value_type& key) {
+		// Extract node with key, return its NodeHandle
 		const const_iterator pos = this->find(key);
 		if (pos == end()) {
 			return NodeHandle{};
 		}
 		return this->extract(pos);
 	}
+
+	auto insert(NodeHandle&& handle) {
+		// Insert node from handle
+		if (handle.isEmpty()) {
+			return InsertReturnType<iterator, NodeHandle>{end(), false, {}};
+		}
+
+		const auto node = handle.getPointer();
+		_NodeFindResult<_NodePointer> result = this->_findLowerBound(node->value);
+		if (this->_isDuplicateKey(result.bound, node->value)) {
+			return InsertReturnType<iterator, NodeHandle>{iterator(result.bound), false, std::move(handle)};
+		}
+
+		this->_checkMaxSize();
+
+		node->left	= nullptr;
+		node->right = nullptr;
+		const auto inserted = _data.insert(result.location, handle._release());
+		return InsertReturnType<iterator, NodeHandle>{iterator(inserted), true, std::move(handle)};
+	}
+
+	iterator insert(const const_iterator hint, NodeHandle&& handle) {
+		// Insert node from handle with hint
+		if (handle.isEmpty()) {
+			return end();
+		}
+		const auto node = handle.getPointer();
+		_NodeFindHintResult<_NodePointer> result = this->_findHint(hint.getPointer(), node->value);
+		if (result.isDuplicate) {
+			return iterator(result.location.parent);
+		}
+
+		this->_checkMaxSize();
+
+		node->left	= nullptr;
+		node->right = nullptr;
+		const auto inserted = _data.insert(result.location, handle._release());
+		return iterator(inserted);
+	}
 #endif // Has C++17
 
-	// Testing purpose only
-	void print(const Traversal order = Traversal::IN) {
-		std::cout << "My tree: ";
+	struct DefaultPrint {
+		// Default print functor
+		template<class NodePointer>
+		void operator()(NodePointer node) const noexcept {
+			std::cout << node->value << " ";
+		}
+	};
+
+	template<class PrintFnc = DefaultPrint>
+	void print(const TreeOrder order, PrintFnc print = PrintFnc{}) {
+		// Print tree in specified order using print function
 		const _NodePointer root = _data.head->parent;
 		if (!root) {
 			std::cout << "Empty!\n";
@@ -859,57 +942,24 @@ public:
 		}
 
 		switch (order) {
-			case PRE: {
+			case PRE_ORDER: {
+				this->_preOrder(root, print);
 				break;
 			}
-			case IN: {
-				this->_inOrder(root);
+			case IN_ORDER: {
+				this->_inOrder(root, print);
 				break;
 			}
-			case POST: {
+			case POST_ORDER: {
+				this->_postOrder(root, print);
 				break;
 			}
-			case LEVEL: {
-				this->_levelOrder(root, [](const _NodePointer& node) { std::cout << node->value << " "; });
-				break;
-			}
-			case LEVEL_H:
-			{
-				this->_levelOrder(root, [](const _NodePointer& node) { std::cout << static_cast<int>(node->height) << " "; });
+			case LEVEL_ORDER: {
+				this->_levelOrder(root, print);
 				break;
 			}
 		}
-		std::cout << "\nMin: " << _data.head->left->value << " - Max: " << _data.head->right->value << "\n";
-		//std::cout << "Root->parent: " << _data.head->parent->parent << "\n";
-	}
-
-	void _inOrder(_NodePointer node) {
-		if (!node) {
-			return;
-		}
-
-		this->_inOrder(node->left);
-		std::cout << node->value << " ";
-		this->_inOrder(node->right);
-	}
-
-	template<class Print>
-	void _levelOrder(_NodePointer root, Print printNode) {
-		std::queue<_NodePointer> nodesQueue;
-		nodesQueue.push(root);
-		while (!nodesQueue.empty()) {
-			const _NodePointer node = nodesQueue.front();
-			//std::cout << node->value << " ";
-			printNode(node);
-
-			nodesQueue.pop();
-			if (node->left) {
-				nodesQueue.push(node->left);
-			}
-			if (node->right) {
-				nodesQueue.push(node->right);
-			}
-		}
+		std::cout << "\n";
 	}
 
 private:
@@ -1059,6 +1109,8 @@ private:
 			return std::make_pair(result.bound, false);
 		}
 
+		this->_checkMaxSize();
+
 		const _NodePointer newNode = tempNode.release(); // Safe to insert, release temp node, transfer ownership to *this
 		return std::make_pair(_data.insert(result.location, newNode), true);
 	}
@@ -1073,6 +1125,8 @@ private:
 		if (result.isDuplicate) {
 			return result.location.parent;
 		}
+
+		this->_checkMaxSize();
 
 		const _NodePointer newNode = tempNode.release();
 		return _data.insert(result.location, newNode);
@@ -1107,6 +1161,68 @@ private:
 			return result.bound;
 		}
 		return _data.head;
+	}
+
+	void _checkMaxSize() {
+		// Check if tree has reached max size
+		if (this->maxSize() == _data.size) {
+			throw std::length_error("container reached max size");
+		}
+	}
+
+	template<class PrintFnc>
+	void _preOrder(_NodePointer node, PrintFnc print) {
+		// Print subtree at node in pre-order
+		if (!node) {
+			return;
+		}
+
+		print(node);
+		this->_preOrder(node->left, print);
+		this->_preOrder(node->right, print);
+	}
+
+	template<class PrintFnc>
+	void _inOrder(_NodePointer node, PrintFnc print) {
+		// Print subtree at node in in-order
+		if (!node) {
+			return;
+		}
+
+		this->_inOrder(node->left, print);
+		print(node);
+		this->_inOrder(node->right, print);
+	}
+
+	template<class PrintFnc>
+	void _postOrder(_NodePointer node, PrintFnc print) {
+		// Print subtree at node in post-order
+		if (!node) {
+			return;
+		}
+
+		this->_postOrder(node->left, print);
+		this->_postOrder(node->right, print);
+		print(node);
+	}
+
+	template<class PrintFnc>
+	void _levelOrder(_NodePointer root, PrintFnc print) {
+		// Print subtree at node in level-order
+		std::queue<_NodePointer> nodesQueue;
+		nodesQueue.push(root);
+		while (!nodesQueue.empty()) {
+			const _NodePointer node = nodesQueue.front();
+			print(node);
+
+			nodesQueue.pop();
+			if (node->left) {
+				nodesQueue.push(node->left);
+			}
+			if (node->right) {
+				nodesQueue.push(node->right);
+			}
+		}
 	}
 
 private:

@@ -2,12 +2,14 @@
 #ifndef NODE_HANDLE_H
 #define NODE_HANDLE_H
 
+#include"avl_tree.h"
+
 #include"memory.hpp"
 #include"utility.hpp"
 
 template<class Iter, class NodeType>
 struct InsertReturnType {
-	Iter position; // Inserted node iterator
+	Iter position; // Inserted node iterator if inserted, otherwise the duplicate node iterator
 	bool inserted; // Whether insertion took place
 	NodeType node; // Node handle: Empty if inserted, otherwise contains the node that was not inserted
 };
@@ -32,6 +34,9 @@ private:
 		: _ptr(ptr) {}
 
 public:
+	template<class, class>
+	friend class AVLTree;
+
 	_NodeHandle() noexcept
 		: _ptr(nullptr) {}
 
@@ -62,7 +67,7 @@ public:
 		return _ptr;
 	}
 
-	[[nodiscard]] bool empty() const noexcept {
+	[[nodiscard]] bool isEmpty() const noexcept {
 		return _ptr == nullptr;
 	}
 
@@ -85,6 +90,10 @@ private:
 		if (_ptr) {
 			_NodeType::freeNode(std::exchange(_ptr, nullptr));
 		}
+	}
+
+	NodePointer _release() noexcept {
+		return std::exchange(_ptr, nullptr);
 	}
 
 private:
