@@ -3,6 +3,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="AVL Tree/AVL Tree.vcxproj" Id="ccc5641c-ef2a-4ef3-839d-3f8788c809eb" />
+  <Project Path="AVL Tree/AVL Tree.vcxproj" Id="8d522d61-cce0-4b03-a390-ebb6ea0f1c5e" />
+  <Project Path="Dynamic Array/Dynamic Array.vcxproj" Id="ca61a794-b1f3-4d8f-a9ff-a70fd16627b3" />
   <Project Path="Forward List/Forward List.vcxproj" Id="3bb67cde-16f4-4c1b-aa85-7edf82f72dff" />
 </Solution>

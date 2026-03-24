@@ -1,41 +1,35 @@
 #include<set>
 #include<vector>
-#include<string>
-#include<forward_list>
 
 #include"avl_tree.h"
-#include"type_traits.hpp"
 
-using std::cout;
-using std::cin;
+using namespace std;
 
-#define TYPE int
-
-class IntWrapper {
+class Int {
 public:
-	IntWrapper() = default;
+	Int() = default;
 	
-	explicit IntWrapper(int val)
+	explicit Int(int val)
 		: data(val) {}
 
-	friend std::ostream& operator<<(std::ostream& os, const IntWrapper& obj) {
+	friend ostream& operator<<(ostream& os, const Int& obj) {
 		return os << obj.data;
 	}
 
 	int data;
 };
 
-// Create a transparent comparator for IntWrapper
-//struct IntWrapperCompare {
-//	bool operator()(const IntWrapper& a, const IntWrapper& b) const {
+// Create a transparent comparator for Int
+//struct IntCompare {
+//	bool operator()(const Int& a, const Int& b) const {
 //		return a.data < b.data;
 //	}
 //
-//	[[nodiscard]] bool operator()(int a, const IntWrapper& b) const {
+//	[[nodiscard]] bool operator()(int a, const Int& b) const {
 //		return a < b.data;
 //	}
 //
-//	[[nodiscard]] bool operator()(const IntWrapper& a, int b) const {
+//	[[nodiscard]] bool operator()(const Int& a, int b) const {
 //		return a.data < b;
 //	}
 //
@@ -43,23 +37,22 @@ public:
 //	using IsTransparent		= void;
 //};
 
-// Or overload operator< and use std::less<> since its also transparent by default
-[[nodiscard]] bool operator<(const IntWrapper& a, const IntWrapper& b) {
+[[nodiscard]] bool operator<(const Int& a, const Int& b) {
 	return a.data < b.data;
 }
 
-[[nodiscard]] bool operator<(int a, const IntWrapper& b) {
+[[nodiscard]] bool operator<(int a, const Int& b) {
 	return a < b.data;
 }
 
-[[nodiscard]] bool operator<(const IntWrapper& a, int b) {
+[[nodiscard]] bool operator<(const Int& a, int b) {
 	return a.data < b;
 }
 
 int main() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 
-	AVLTree<TYPE> tree;
+	AVLTree<int> tree;
 	for (const auto& val : data) {
 		tree.emplace(val);
 	}
@@ -76,9 +69,9 @@ int main() {
 /*
 Nodes:	5 4 8 3 6 13 12 24
 Height: 4 2 3 1 1 2  1  1
-Line:
-5
-4 8
-3 6 13
-12 24
+Tree:
+		5
+	4		8
+3		  6   13
+			12  24
 */
