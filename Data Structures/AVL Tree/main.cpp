@@ -1,7 +1,12 @@
 #include<set>
 #include<vector>
+#include<algorithm>
 
 #include"avl_tree.h"
+
+#include"input.hpp"
+#include"utility.hpp"
+#include"printer.hpp"
 
 using namespace std;
 
@@ -37,17 +42,17 @@ public:
 //	using IsTransparent		= void;
 //};
 
-[[nodiscard]] bool operator<(const Int& a, const Int& b) {
-	return a.data < b.data;
-}
-
-[[nodiscard]] bool operator<(int a, const Int& b) {
-	return a < b.data;
-}
-
-[[nodiscard]] bool operator<(const Int& a, int b) {
-	return a.data < b;
-}
+//[[nodiscard]] bool operator<(const Int& a, const Int& b) {
+//	return a.data < b.data;
+//}
+//
+//[[nodiscard]] bool operator<(int a, const Int& b) {
+//	return a < b.data;
+//}
+//
+//[[nodiscard]] bool operator<(const Int& a, int b) {
+//	return a.data < b;
+//}
 
 int main() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
@@ -57,7 +62,8 @@ int main() {
 		tree.emplace(val);
 	}
 
-	tree.print(TreeOrder::LEVEL_ORDER);
+	//tree.print(TreeOrder::LEVEL_ORDER);
+	//std::ranges::move(data.begin(), data.begin() + 1, data.end() + 2);
 
 	cout << "\nPress Enter to exit...";
 	cin.get();

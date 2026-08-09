@@ -4,25 +4,26 @@
 
 #include<stdexcept>
 
+#include"compare.hpp"
 #include"memory.hpp"
-#include"type_traits.hpp"
 
 template<class FwdListVal>
 class ForwardListConstIterator {
 private:
-	using _NodePointer = typename FwdListVal::NodePointer;
+	using _NodePointer = typename FwdListVal::node_pointer;
 
 public:
+	using iterator_concept	= std::forward_iterator_tag;
 	using iterator_category	= std::forward_iterator_tag;
-	using value_type		= typename FwdListVal::ValueType;
-	using difference_type	= typename FwdListVal::DifferenceType;
-	using pointer			= typename FwdListVal::ConstPointer;
+	using value_type		= typename FwdListVal::value_type;
+	using difference_type	= typename FwdListVal::difference_type;
+	using pointer			= typename FwdListVal::const_pointer;
 	using reference			= const value_type&;
 
 	ForwardListConstIterator() noexcept
 		: ptr() {}
 
-	ForwardListConstIterator(const _NodePointer ptr) noexcept
+	ForwardListConstIterator(_NodePointer ptr) noexcept
 		: ptr(ptr) {}
 
 	[[nodiscard]] reference operator*() const noexcept {
@@ -63,10 +64,11 @@ private:
 	using _BaseIter::_BaseIter;
 
 public:
+	using iterator_concept	= std::forward_iterator_tag;
 	using iterator_category	= std::forward_iterator_tag;
-	using value_type		= typename FwdListVal::ValueType;
-	using difference_type	= typename FwdListVal::DifferenceType;
-	using pointer			= typename FwdListVal::Pointer;
+	using value_type		= typename FwdListVal::value_type;
+	using difference_type	= typename FwdListVal::difference_type;
+	using pointer			= typename FwdListVal::pointer;
 	using reference			= value_type&;
 
 	[[nodiscard]] reference operator*() const noexcept {
@@ -91,163 +93,60 @@ public:
 
 template<class ValueT>
 struct ForwardListNode {
-	using NodePointer = ForwardListNode*;
+	using node_pointer	= ForwardListNode*;
+	using value_type	= ValueT;
 
 	ForwardListNode() = default;
 
 	ForwardListNode(const ForwardListNode&)				= delete;
 	ForwardListNode& operator=(const ForwardListNode&)	= delete;
 
-	static void free_node(NodePointer node) noexcept {
-		memory::destruct_in_place(node->next);
-		memory::destruct_in_place(node->value);
+	static void free_node(node_pointer node) noexcept {
+		memory::destruct_at(std::addressof(node->next));
+		memory::destruct_at(std::addressof(node->value));
 		memory::deallocate(node, sizeof(ForwardListNode));
 	}
 
-	NodePointer	next; // Member next MUST come first.
-	ValueT		value;
+	node_pointer	next; // Member next MUST come first.
+	value_type		value;
 };
 
 template<class ValueT, class SizeT, class DiffT, class Ptr, class ConstPtr, class NodeT>
 class ForwardListValue {
 public:
-	using NodeType			= NodeT;
-	using NodePointer		= typename NodeType::NodePointer;
+	using node_type			= NodeT;
+	using node_pointer		= typename node_type::node_pointer;
 
-	using ValueType			= ValueT;
-	using SizeType			= SizeT;
-	using DifferenceType	= DiffT;
-	using Pointer			= Ptr;
-	using ConstPointer		= ConstPtr;
-	using Reference			= ValueType&;
-	using ConstReference	= const ValueType&;
+	using value_type		= ValueT;
+	using size_type			= SizeT;
+	using difference_type	= DiffT;
+	using pointer			= Ptr;
+	using const_pointer		= ConstPtr;
+	using reference			= value_type&;
+	using const_reference	= const value_type&;
 
 	ForwardListValue() noexcept
 		: head() {}
 
-	[[nodiscard]] NodePointer before_head() const noexcept {
+	[[nodiscard]] node_pointer before_head() const noexcept {
 		// Returns pointer to "before head" pseudo node
 		/*
-		First, cast away head's constness, then reinterpret cast it from NodePointer to NodeType&.
+		First, cast away head's constness, then reinterpret cast it from node_pointer to node_type&.
 		After the reinterpret cast, head's memory location overlaps with member next of the "before head" pseudo node.
 		The result is the pseudo node which points to head through its member next.
-		Take the pseudo node's address, cast it to a NodePointer and we get a "before head" NodePointer.
+		Take the pseudo node's address, cast it to a node_pointer and we get a "before head" node_pointer.
 
 		Important:
-		The "before head" NodePointer can only be used as a sentinel for insertions to the front of the list.
+		The "before head" node_pointer can only be used as a sentinel for insertions to the front of the list.
 		Only accessing the member next is valid, all other operations on the pointer (dereferencing, accessing its value, ...) are UB.
 		*/
-		return static_cast<NodePointer>(std::addressof( // Step 3: Take the address of the pseudo node and cast it to a NodePointer.
-			reinterpret_cast<NodeType&>(				// Step 2: Reinterpret cast head from a NodePointer to a NodeType&.
-			const_cast<NodePointer&>(head)				// Step 1: Const cast head to allow modification.
+		return static_cast<node_pointer>(std::addressof(	// Step 3: Take the address of the pseudo node and cast it to a node_pointer.
+			reinterpret_cast<node_type&>(					// Step 2: Reinterpret cast head from a node_pointer to a node_type&.
+			const_cast<node_pointer&>(head)					// Step 1: Const cast head to allow modification.
 		)));
 	}
 
-	void clear() noexcept {
-		// Clear all nodes
-		for (NodePointer currNode = head; currNode;) {
-			NodeType::free_node(std::exchange(currNode, currNode->next));
-		}
-	}
-
-	void swap(ForwardListValue& other) noexcept {
-		// Swap contents with other
-		using std::swap;
-		swap(head, other.head);
-	}
-
-	NodePointer head;
-};
-
-template<class FwdListVal>
-struct ForwardListInsertOperation {
-	using NodeType		= typename FwdListVal::NodeType;
-	using NodePointer	= typename FwdListVal::NodePointer;
-
-	using SizeType		= typename FwdListVal::SizeType;
-
-	ForwardListInsertOperation()
-		: _head(), _tail() {}
-
-	ForwardListInsertOperation(const ForwardListInsertOperation&)				= delete;
-	ForwardListInsertOperation& operator=(const ForwardListInsertOperation&)	= delete;
-
-	~ForwardListInsertOperation() {
-		if (_tail == NodePointer{}) {
-			return;
-		}
-
-		memory::construct_in_place(_tail->next, NodePointer{});
-		while (_head) {
-			NodeType::free_node(std::exchange(_head, _head->next));
-		}
-	}
-
-	template<class... Args>
-	void append_n(SizeType count, const Args&... args) {
-		// Append count elements by constructing in place using args
-		if (count <= 0) {
-			return;
-		}
-
-		NodePointer newNode{};
-		if (_tail == NodePointer{}) {
-			newNode = static_cast<NodePointer>(memory::allocate(1, sizeof(NodeType)));
-			memory::construct_in_place(newNode->value, args...);
-			_head = newNode;
-			_tail = newNode;
-			--count;
-		}
-
-		for (; 0 < count; --count) {
-			newNode = static_cast<NodePointer>(memory::allocate(1, sizeof(NodeType)));
-			memory::construct_in_place(newNode->value, args...);
-			memory::construct_in_place(_tail->next, newNode);
-			_tail = newNode;
-		}
-	}
-
-	template<class InputIter>
-	void append_range(InputIter first, const InputIter last) {
-		// Append range [first, last)
-		if (first == last) {
-			return;
-		}
-
-		NodePointer newNode{};
-		if (_tail == NodePointer{}) {
-			newNode = static_cast<NodePointer>(memory::allocate(1, sizeof(NodeType)));
-			memory::construct_in_place(newNode->value, *first);
-			_head = newNode;
-			_tail = newNode;
-			++first;
-		}
-
-		for (; first != last; ++first) {
-			newNode = static_cast<NodePointer>(memory::allocate(1, sizeof(NodeType)));
-			memory::construct_in_place(newNode->value, *first);
-			memory::construct_in_place(_tail->next, newNode);
-			_tail = newNode;
-		}
-	}
-
-	NodePointer attach_after(NodePointer node) {
-		// Attach elements in *this after node, reset *this to default-initialized state
-		const auto oldTail = _tail;
-		if (oldTail == NodePointer{}) {
-			return node;
-		}
-
-		memory::construct_in_place(oldTail->next, node->next);
-		node->next	= _head;
-		_tail		= NodePointer{};
-
-		return oldTail;
-	}
-
-private:
-	NodePointer _head; // Points to the first constructed node
-	NodePointer _tail; // Points to the most recently constructed node
+	node_pointer head;
 };
 
 template<class T>
@@ -263,77 +162,239 @@ public:
 
 private:
 	using _NodeType		= ForwardListNode<T>;
-	using _NodePointer	= typename _NodeType::NodePointer;
+	using _NodePointer	= typename _NodeType::node_pointer;
 
 	using _FwdListValue	= ForwardListValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
+
+	struct NodeConstructGuard {
+		// Guard for node construct failure
+		NodeConstructGuard()
+			: node() {}
+
+		NodeConstructGuard(const NodeConstructGuard&)				= delete;
+		NodeConstructGuard& operator=(const NodeConstructGuard&)	= delete;
+
+		~NodeConstructGuard() noexcept {
+			if (node) {
+				memory::deallocate(node, sizeof(_NodeType));
+			}
+		}
+
+		void allocate() {
+			/*
+			Disengage from previous node first, then allocate new memory block.
+			If allocation fails, there won't be a double free.
+			*/
+			node = nullptr;
+			node = static_cast<_NodePointer>(memory::allocate(1, sizeof(_NodeType)));
+		}
+
+		_NodePointer release() noexcept {
+			return std::exchange(node, nullptr);
+		}
+
+		_NodePointer node;
+	};
+
+	struct ForwardListInsertOperation {
+		// Guard for list insert failure
+		ForwardListInsertOperation() noexcept
+			: head(), tail() {}
+
+		ForwardListInsertOperation(const ForwardListInsertOperation&)				= delete;
+		ForwardListInsertOperation& operator=(const ForwardListInsertOperation&)	= delete;
+
+		~ForwardListInsertOperation() {
+			if (tail == _NodePointer{}) {
+				return;
+			}
+
+			memory::construct_at(std::addressof(tail->next), _NodePointer{});
+			while (head) {
+				_NodeType::free_node(std::exchange(head, head->next));
+			}
+		}
+
+		template<class... Args>
+		void append_n(const size_type count, const Args&... args) {
+			// Append count elements by constructing in place using args
+			if (count == 0) {
+				return;
+			}
+
+			NodeConstructGuard guard;
+			if (tail == _NodePointer{}) {
+				guard.allocate();
+				memory::construct_at(std::addressof(guard.node->value), args...);
+				head = guard.node;
+				tail = guard.node;
+				--count;
+			}
+
+			for (; 0 < count; --count) {
+				guard.allocate();
+				memory::construct_at(std::addressof(guard.node->value), args...);
+				memory::construct_at(std::addressof(tail->next), guard.node);
+				tail = guard.node;
+			}
+			guard.release();
+		}
+
+		template<class It, class Se>
+		void append_range(It first, Se last) {
+			// Append range [first, last)
+			if (first == last) {
+				return;
+			}
+
+			NodeConstructGuard guard;
+			if (tail == _NodePointer{}) {
+				guard.allocate();
+				memory::construct_at(std::addressof(guard.node->value), *first);
+
+				const auto newHead = guard.release();
+				head = newHead;
+				tail = newHead;
+				++first;
+			}
+
+			for (; first != last; ++first) {
+				guard.allocate();
+				memory::construct_at(std::addressof(guard.node->value), *first);
+
+				const auto newTail = guard.release();
+				memory::construct_at(std::addressof(tail->next), newTail);
+				tail = newTail;
+			}
+		}
+
+		_NodePointer attach_after(_NodePointer node) noexcept {
+			// Attach elements in *this after node, reset *this to default-initialized state
+			const auto oldTail = tail;
+			if (oldTail == _NodePointer{}) {
+				return node;
+			}
+
+			memory::construct_at(std::addressof(oldTail->next), node->next);
+			node->next = head;
+			tail = _NodePointer{};
+
+			return oldTail;
+		}
+
+		_NodePointer head; // Points to the first constructed node
+		_NodePointer tail; // Points to the most recently constructed node
+	};
+
+	struct ForwardListRemoveOperation {
+		/*
+		This serves 2 purposes:
+			1. RAII guard for list remove failure
+			2. Queue for nodes waiting to be removed
+		
+		Instead of removing nodes while iterating, we queue them up and remove them all at once.
+		
+		Predicates for removal could be stateful, capturing references to other elements in the list,
+		including ones that would be removed. Destructing nodes immediately after matching could invalidate
+		the predicate's captured references, leading to undefined behavior.
+		*/
+		ForwardListRemoveOperation() noexcept
+			: head(), tail(std::addressof(head)) {}
+
+		ForwardListRemoveOperation(const ForwardListRemoveOperation&)				= delete;
+		ForwardListRemoveOperation& operator=(const ForwardListRemoveOperation&)	= delete;
+
+		~ForwardListRemoveOperation() {
+			auto subject = head;
+			while (subject) {
+				const auto nextNode = subject->next;
+				memory::destruct_at(std::addressof(subject->next));
+				memory::destruct_at(std::addressof(subject->value));
+				memory::deallocate(subject, sizeof(_NodeType));
+				subject = nextNode;
+			}
+		}
+
+		_NodePointer extract_after( _NodePointer prevNode) noexcept {
+			// Extract node after prevNode from the list and add it to the remove queue
+			const auto removed	= prevNode->next;
+			const auto nextNode = removed->next;
+
+			removed->next	= nullptr;
+			prevNode->next	= nextNode;
+
+			*tail	= removed;
+			tail	= std::addressof(removed->next);
+			return nextNode;
+		}
+
+		_NodePointer head;
+		_NodePointer* tail;
+	};
 
 public:
 	using iterator			= ForwardListIterator<_FwdListValue>;
 	using const_iterator	= ForwardListConstIterator<_FwdListValue>;
 
 public:
-	ForwardList()
-		: _data() {} // Construct empty forward list
+	ForwardList() noexcept
+		: _data() {}
 
 	explicit ForwardList(const size_type count)
 		: _data() {
-		// Construct count * T()
-		this->_construct(count);
+		this->_construct_n(count);
 	}
 
 	ForwardList(const size_type count, const T& val)
 		: _data() {
-		// Construct count * val
-		this->_construct(count, val);
+		this->_construct_n(count, val);
 	}
 
-	template<class InputIter,
-		std::enable_if_t<traits::is_input_iter<InputIter>, bool> = true>
-	ForwardList(InputIter first, const InputIter last)
+	template<class It,
+		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	ForwardList(It first, It last)
 		: _data() {
-		// Construct from range [first, last)
-		this->_construct(static_cast<size_type>(std::distance(first, last)), first, last);
+		const auto count = static_cast<size_type>(std::distance(first, last));
+		this->_construct_n(count, std::move(first), std::move(last));
 	}
 
 	ForwardList(const ForwardList& other)
 		: _data() {
-		// Copy from other
-		this->_construct(other.size(), other.begin(), other.end());
-	}
-
-	ForwardList& operator=(const ForwardList& other) {
-		if (this != std::addressof(other)) {
-			this->assign(other.begin(), other.end());
-		}
-		return *this;
+		this->_construct_n(other.size(), other.begin(), other.end());
 	}
 
 	ForwardList(ForwardList&& other) noexcept
 		: _data() {
-		_data.swap(other._data);
+		_data.head = std::exchange(other._data.head, nullptr);
+	}
+
+	ForwardList(std::initializer_list<T> initList)
+		: _data() {
+		this->_construct_n(initList.size(), initList.begin(), initList.end());
+	}
+
+	ForwardList& operator=(const ForwardList& other) {
+		if (this != std::addressof(other)) {
+			this->_assign_range(other.begin(), other.end());
+		}
+		return *this;
 	}
 
 	ForwardList& operator=(ForwardList&& other) noexcept {
 		if (this != std::addressof(other)) {
 			this->clear();
-			_data.swap(other._data);
+			_data.head = std::exchange(other._data.head, nullptr);
 		}
 		return *this;
 	}
 
-	ForwardList(std::initializer_list<T> initList)
-		: _data() {
-		// Construct from initializer list
-		this->_construct(initList.size(), initList.begin(), initList.end());
-	}
-
 	ForwardList& operator=(std::initializer_list<T> initList) {
-		this->assign(initList.begin(), initList.end());
+		this->_assign_range(initList.begin(), initList.end());
 		return *this;
 	}
 
 	~ForwardList() noexcept {
-		_data.clear();
+		this->clear();
 	}
 
 	[[nodiscard]] iterator before_begin() noexcept {
@@ -373,15 +434,15 @@ public:
 	}
 
 	[[nodiscard]] reference front() noexcept {
-		return _data.head->value; // UB
+		return _data.head->value; // UB: head could be nullptr
 	}
 
 	[[nodiscard]] const_reference front() const noexcept {
-		return _data.head->value; // UB
+		return _data.head->value;
 	}
 
 	[[nodiscard]] size_type size() const noexcept {
-		return this->count();
+		return static_cast<size_type>(std::distance(this->begin(), this->end()));
 	}
 
 	[[nodiscard]] size_type max_size() const noexcept {
@@ -390,36 +451,6 @@ public:
 
 	[[nodiscard]] bool is_empty() const noexcept {
 		return _data.head == nullptr;
-	}
-
-	void assign(const size_type count, const T& val) {
-		// Assign count * val
-		this->clear();
-		this->insert_after(this->before_begin(), count, val);
-	}
-
-	template<class InputIter,
-		std::enable_if_t<traits::is_input_iter<InputIter>, bool> = true>
-	void assign(InputIter first, const InputIter last) {
-		// Assign range [first, last)
-		_NodePointer currNode = _data.before_head();
-		for (; first != last; ++first) {
-			const _NodePointer nextNode = currNode->next;
-			if (!nextNode) {
-				// Runs out of nodes, insert the remaining nodes to *this
-				ForwardListInsertOperation<_FwdListValue> insertOp;
-				insertOp.append_range(first, last);
-				insertOp.attach_after(currNode);
-				return;
-			}
-			// Assign [first, last) to current nodes
-			nextNode->value = *first;
-			currNode = nextNode;
-		}
-		// Trim excessive nodes from *this
-		for (_NodePointer nextNode = std::exchange(currNode->next, nullptr); nextNode;) {
-			_NodeType::free_node(std::exchange(nextNode, nextNode->next));
-		}
 	}
 
 	void push_front(const T& val) {
@@ -433,209 +464,210 @@ public:
 	}
 
 	template<class... Args>
-	decltype(auto) emplace_front(Args&&... args) {
+	reference emplace_front(Args&&... args) {
 		// Insert at begin by constructing in place using args
 		this->_insert_after(_data.before_head(), std::forward<Args>(args)...);
 		return this->front();
 	}
 
 	template<class... Args>
-	iterator emplace_after(const_iterator pos, Args&&... args) {
-		// Insert after pos by constructing in place using args
-		this->_insert_after(pos.ptr, std::forward<Args>(args)...);
-		return iterator(pos.ptr->next);
+	iterator emplace_after(const_iterator where, Args&&... args) {
+		// Insert after where by constructing in place using args
+		this->_insert_after(where.ptr, std::forward<Args>(args)...);
+		return iterator(where.ptr->next);
 	}
 
-	iterator insert_after(const_iterator pos, const T& val) {
-		// Insert after pos by copying val
-		this->_insert_after(pos.ptr, val);
-		return iterator(pos.ptr->next);
+	iterator insert_after(const_iterator where, const T& val) {
+		// Insert after where by copying val
+		this->_insert_after(where.ptr, val);
+		return iterator(where.ptr->next);
 	}
 
-	iterator insert_after(const_iterator pos, T&& val) {
-		// Insert after pos by copying val
-		return this->emplace_after(pos, std::move(val));
+	iterator insert_after(const_iterator where, T&& val) {
+		// Insert after where by copying val
+		return this->emplace_after(where, std::move(val));
 	}
 
-	iterator insert_after(const_iterator pos, const size_type count, const T& val) {
-		// Insert count * val after pos
+	iterator insert_after(const_iterator where, const size_type count, const T& val) {
+		// Insert count * val after where
 		if (count != 0) {
-			ForwardListInsertOperation<_FwdListValue> insertOp;
+			ForwardListInsertOperation insertOp;
 			insertOp.append_n(count, val);
-			return iterator(insertOp.attach_after(pos.ptr));
+			return iterator(insertOp.attach_after(where.ptr));
 		}
-		return iterator(pos.ptr);
+		return iterator(where.ptr);
 	}
 
-	template<class InputIter,
-		std::enable_if_t<traits::is_input_iter<InputIter>, bool> = true>
-	iterator insert_after(const_iterator pos, const InputIter first, const InputIter last) {
-		// Insert range [first, last) after pos
+	template<class It,
+		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	iterator insert_after(const_iterator where, It first, It last) {
+		// Insert range [first, last) after where
 		if (first != last) {
-			ForwardListInsertOperation<_FwdListValue> insertOp;
-			insertOp.append_range(first, last);
-			return iterator(insertOp.attach_after(pos.ptr));
+			ForwardListInsertOperation insertOp;
+			insertOp.append_range(std::move(first), std::move(last));
+			return iterator(insertOp.attach_after(where.ptr));
 		}
-		return iterator(pos.ptr);
+		return iterator(where.ptr);
 	}
 
-	iterator insert_after(const_iterator pos, std::initializer_list<T> initList) {
-		// Insert initList after pos
-		return this->insert_after(pos, initList.begin(), initList.end());
+	iterator insert_after(const_iterator where, std::initializer_list<T> initList) {
+		// Insert initList after where
+		return this->insert_after(where, initList.begin(), initList.end());
+	}
+
+	void assign(const size_type count, const T& val) {
+		// Assign count * val
+		this->clear();
+		this->insert_after(this->before_begin(), count, val);
+	}
+
+	template<class It,
+		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	void assign(It first, It last) {
+		// Assign range [first, last)
+		this->_assign_range(std::move(first), std::move(last));
 	}
 
 	void pop_front() noexcept {
-		// Erase at begin
+		// Erase the first element
 		this->_erase_after(_data.before_head());
 	}
 
-	iterator erase_after(const_iterator pos) noexcept {
-		// Erase after pos
-		this->_erase_after(pos.ptr);
-		return iterator(pos.ptr->next);
+	iterator erase_after(const_iterator where) noexcept {
+		// Erase after where
+		this->_erase_after(where.ptr);
+		return iterator(where.ptr->next);
 	}
 
 	iterator erase_after(const_iterator first, const_iterator last) noexcept {
 		// Erase range (first, last)
-		_NodePointer currNode = first.ptr;
-		_NodePointer lastNode = last.ptr;
+		const auto currNode = first.ptr;
+		const auto lastNode = last.ptr;
 		if (currNode != lastNode) {
-			for (_NodePointer nextNode = currNode->next; nextNode != lastNode;) {
-				currNode->next = nextNode->next;
-				_NodeType::free_node(std::exchange(nextNode, currNode->next));
+			for (;;) {
+				const auto subject = currNode->next;
+				if (subject == lastNode) {
+					break;
+				}
+
+				currNode->next = subject->next;
+				_NodeType::free_node(subject);
 			}
 		}
 		return iterator(lastNode);
 	}
 
 	void clear() noexcept {
-		// Erase all
-		_data.clear();
-		_data.head = nullptr;
+		// Erase all elements
+		auto currNode = std::exchange(_data.head, nullptr);
+		auto nextNode = _NodePointer{};
+		for (; currNode; currNode = nextNode) {
+			nextNode = currNode->next;
+			_NodeType::free_node(currNode);
+		}
 	}
 
 	void swap(ForwardList& other) noexcept {
 		// Swap contents with other
+		using std::swap;
 		if (this != std::addressof(other)) {
-			_data.swap(other._data);
+			swap(_data.head, other._data.head); 
 		}
 	}
 
-	void splice_after(const_iterator pos, ForwardList<T>& other) noexcept {
-		// Splice all of other after pos
+	void splice_after(const_iterator where, ForwardList<T>& other) noexcept {
+		// Splice all of other after where
 		if (this != std::addressof(other) && !other.is_empty()) {
-			const auto first	= other.before_begin();
-			const auto last		= other.end();
-			this->_splice_after(pos.ptr, first.ptr, last.ptr);
+			this->_splice_after(where, other.before_begin(), other.end());
 		}
 	}
 
-	void splice_after(const_iterator pos, const_iterator before) noexcept {
-		// Splice range (before, before + 2) after pos
-		return this->_splice_after(pos.ptr, before.ptr);
+	void splice_after(const_iterator where, ForwardList<T>&& other) noexcept {
+		// Splice all of other after where
+		this->splice_after(where, other);
 	}
 
-	void splice_after(const_iterator pos, const_iterator first, const_iterator last) noexcept {
-		// Splice range (first, last) after pos
-		return this->_splice_after(pos.ptr, first.ptr, last.ptr);
+	void splice_after(const_iterator where, const_iterator first) noexcept {
+		// Splice one node in range (first, first + 2) after where
+		return this->_splice_after(where, first);
 	}
 
-	[[nodiscard]] const_iterator find(const T& key) const noexcept {
-		// Find the first occurence of key
-		_NodePointer currNode = _data.head;
-		while (currNode && currNode->value != key) {
-			currNode = currNode->next;
-		}
-		return const_iterator(currNode);
+	void splice_after(const_iterator where, const_iterator first, const_iterator last) noexcept {
+		// Splice range (first, last) after where
+		return this->_splice_after(where, first, last);
 	}
 
-	[[nodiscard]] auto compare(const ForwardList& other) const noexcept {
-		// Compare with other by each element
-		_NodePointer firstNode	= _data.head;
-		_NodePointer secondNode = other._data.head;
-		while (firstNode && secondNode) {
-			if (firstNode->value == secondNode->value) {
-				firstNode	= firstNode->next;
-				secondNode	= secondNode->next;
-				continue;
-			}
-#if _MSVC_LANG >= 202002L
-			return (firstNode->value < secondNode->value) ? std::strong_ordering::less : std::strong_ordering::greater;
-#else
-			return (firstNode->value < secondNode->value) ? -1 : 1;
-#endif // Has C++20
-		}
-
-#if _MSVC_LANG >= 202002L
-		if (!(firstNode && secondNode)) {
-			return std::strong_ordering::equal;
-		}
-		return (secondNode) ? std::strong_ordering::less : std::strong_ordering::greater;
-#else
-		if (!(firstNode && secondNode)) {
-			return 0;
-		}
-		return (secondNode) ? -1 : 1;
-#endif // Has C++20
-	}
-
-	[[nodiscard]] size_type count() const noexcept {
-		// Count all elements in O(n) time
-		size_type count = 0;
-		for (_NodePointer currNode = _data.head; currNode; currNode = currNode->next) {
-			++count;
-		}
-		return count;
-	}
-
-	[[nodiscard]] size_type count(const T& key) const noexcept {
-		// Count occurences of key
-		return this->count_if([&](const T& val) -> bool { return val == key; });
+	size_type remove(const T& val) {
+		// Erase all elements matching val
+		return this->remove_if([&](const T& other) -> bool { return other == val; });
 	}
 
 	template<class UnaryPred>
-	[[nodiscard]] size_type count_if(UnaryPred pred) const noexcept {
-		// Count elements satisfying pred
-		size_type count = 0;
-		for (_NodePointer currNode = _data.head; currNode; currNode = currNode->next) {
-			if (pred(currNode->value)) { // UB
-				++count;
-			}
-		}
-		return count;
-	}
-
-	size_type remove(const T& key) noexcept {
-		// Remove occurences of key
-		return this->remove_after(key, this->before_begin(), this->end());
-	}
-
-	size_type remove_after(const T& key, const_iterator first, const_iterator last) noexcept {
-		// Remove occurences of key in range (first, last)
-		return this->_remove_if_after([&](const T& val) -> bool { return val == key; }, first.ptr, last.ptr);
+	size_type remove_if(UnaryPred pred) {
+		// Erase all elements matching pred
+		return this->remove_if(pred, this->before_begin(), this->end());
 	}
 
 	template<class UnaryPred>
-	size_type remove_if(UnaryPred pred) noexcept {
-		// Remove elements satisfying pred
-		return this->remove_if_after(pred, this->before_begin(), this->end());
+	size_type remove_if(UnaryPred pred, const_iterator first, const_iterator last) {
+		// Erase all elements matching pred in range (first, last)
+		return this->_remove_if(pred, first, last);
 	}
 
-	template<class UnaryPred>
-	size_type remove_if_after(UnaryPred pred, const_iterator first, const_iterator last) noexcept {
-		// Remove elements satisfying pred in range (first, last)
-		return this->_remove_if_after(pred, first.ptr, last.ptr);
+	template<class BinaryPred>
+	size_type remove_adjacent_if(BinaryPred pred) {
+		// Erase all adjacent elements matching pred
+		return this->remove_adjacent_if(pred, this->before_begin(), this->end());
+	}
+
+	template<class BinaryPred>
+	size_type remove_adjacent_if(BinaryPred pred, const_iterator first, const_iterator last) {
+		// Erase all adjacent elements matching pred in range (first, last)
+		return this->_remove_adjacent_if(pred, first, last);
+	}
+
+	size_type unique() {
+		// Erase all duplicates
+		return this->remove_adjacent_if(std::equal_to<>{});
+	}
+
+	void merge(ForwardList& other) {
+		// Merge with other, assuming both lists are sorted and elements are compared using operator<
+		this->_merge(other, std::less<>{});
+	}
+
+	void merge(ForwardList&& other) {
+		// Merge with other, assuming both lists are sorted and elements are compared using operator<
+		this->_merge(other, std::less<>{});
+	}
+
+	template<class Comp>
+	void merge(ForwardList& other, Comp comp) {
+		// Merge with other, assuming both lists are sorted and elements are compared using comp
+		this->_merge(other, comp);
+	}
+
+	template<class Comp>
+	void merge(ForwardList&& other, Comp comp) {
+		// Merge with other, assuming both lists are sorted and elements are compared using comp
+		this->_merge(other, comp);
+	}
+
+	template<class Comp = std::less<>>
+	void sort(Comp comp = Comp{}) {
+		// Sort whole list using merge sort, elements are compared using comp
+		this->_sort(_data.before_head(), comp);
 	}
 
 	void reverse() noexcept {
 		// Reverse elements order
-		if (!_data.head) {
+		if (this->is_empty()) {
 			return;
 		}
 
-		_NodePointer prevNode{};
-		_NodePointer currNode = _data.head;
-		_NodePointer nextNode = currNode->next;
+		auto prevNode = _NodePointer{};
+		auto currNode = _data.head;
+		auto nextNode = currNode->next;
 		for (;;) {
 			currNode->next = prevNode;
 			if (!nextNode) {
@@ -649,32 +681,161 @@ public:
 		}
 	}
 
-	size_type unique_group() noexcept {
-		// Remove consecutive duplicates
-		return this->unique_group([&](const T& lhs, const T& rhs) -> bool { return lhs == rhs; });
+private:
+	template<class... Args>
+	void _construct_n(const size_type count, Args&&... args) {
+		// Construct list using args
+		ForwardListInsertOperation insertOp;
+		if constexpr (sizeof...(Args) == 0) {
+			insertOp.append_n(count);
+		}
+		else if constexpr (sizeof...(Args) == 1) {
+			insertOp.append_n(count, args...);
+		}
+		else if constexpr (sizeof...(Args) == 2) {
+			insertOp.append_range(std::forward<Args>(args)...);
+		}
+		else {
+			static_assert(false, "Unexpected number of arguments");
+		}
+
+		insertOp.attach_after(_data.before_head());
 	}
 
-	template<class BinaryPred>
-	size_type unique_group(BinaryPred pred) noexcept {
-		// Remove consecutive elements satisfying pred
+	template<class... Args>
+	void _insert_after(_NodePointer node, Args&&... args) {
+		// Insert after node by perfect forwarding args
+		NodeConstructGuard guard;
+		guard.allocate();
+		memory::construct_at(std::addressof(guard.node->value), std::forward<Args>(args)...);
+		memory::construct_at(std::addressof(guard.node->next), node->next);
+		node->next = guard.release();
+	}
+
+	template<class It, class Se>
+	void _assign_range(It first, Se last) {
+		// Assign range [first, last)
+		auto currNode = _data.before_head();
+		for (; first != last; ++first) {
+			const auto nextNode = currNode->next;
+			if (!nextNode) {
+				// Runs out of nodes, insert the remaining nodes to *this
+				ForwardListInsertOperation insertOp;
+				insertOp.append_range(first, last);
+				insertOp.attach_after(currNode);
+				return;
+			}
+			// Assign [first, last) to current nodes
+			nextNode->value = *first;
+			currNode = nextNode;
+		}
+		// Trim excessive nodes from *this
+		for (auto subject = std::exchange(currNode->next, nullptr); subject;) {
+			const auto nextNode = subject->next;
+			_NodeType::free_node(subject);
+			subject = nextNode;
+		}
+	}
+
+	void _erase_after(_NodePointer node) noexcept {
+		// Erase after node
+		auto subject	= node->next;
+		node->next		= subject->next;
+		_NodeType::free_node(subject);
+	}
+
+	void _splice_after(const_iterator where, const_iterator first) noexcept {
+		// Splice one node in range (first, first + 2) after where
+		const auto whereNode	= where.ptr;
+		const auto currNode		= first.ptr;
+
+		if (whereNode != currNode) {
+			const auto nextNode = currNode->next;
+			if (whereNode != nextNode) {
+				currNode->next	= nextNode->next;
+				nextNode->next	= whereNode->next;
+				whereNode->next = nextNode;
+			}
+		}
+	}
+
+	template<class Se>
+	void _splice_after(const_iterator where, const_iterator first, Se last) noexcept {
+		// Splice range (first, last) after node
+		if (first == last) {
+			return;
+		}
+
+		const auto whereNode	= where.ptr;
+		const auto firstNode	= first.ptr;
+		const auto lastNode		= last.ptr;
+		// Find prev of last
+		auto nextNode = firstNode->next;
+		if (nextNode == lastNode) {
+			return;
+		}
+
+		auto currNode = firstNode;
+		do {
+			currNode = nextNode;
+			nextNode = nextNode->next;
+		}
+		while (nextNode != lastNode);
+		// UB: if where is in range (first, last), this will lead to 2 unowned, circular node chains
+		const auto extractedHead = firstNode->next;
+		firstNode->next = nextNode;
+		currNode->next	= whereNode->next;
+		whereNode->next = extractedHead;
+	}
+
+	template<class UnaryPred, class Se>
+	size_type _remove_if(UnaryPred pred, const_iterator first, Se last) {
+		// Erase all elements matching pred in range (first, last)
+		if (first == last) {
+			return 0;
+		}
+
+		ForwardListRemoveOperation removeOp;
+
 		size_type removed = 0;
-		if (_data.head) {
-			for (_NodePointer currNode = _data.head, nextNode = currNode->next; nextNode;) {
-				if (pred(currNode->value, nextNode->value)) { // UB
-					_NodeType::free_node(std::exchange(currNode->next, nextNode->next));
-					++removed;
-				}
-				else {
-					currNode = nextNode;
-				}
+		for (auto currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
+			if (pred(nextNode->value)) {
+				nextNode = removeOp.extract_after(currNode);
+				++removed;
+			}
+			else {
+				currNode = nextNode;
 				nextNode = currNode->next;
 			}
 		}
 		return removed;
 	}
-	
-	template<class Comp = std::less<>>
-	void merge(ForwardList<T>& other, Comp comp = Comp{}) noexcept {
+
+	template<class BinaryPred, class Se>
+	size_type _remove_adjacent_if(BinaryPred pred, const_iterator first, Se last) {
+		// Erase all adjacent elements matching pred in range (first, last)
+		if (first == last) {
+			return 0;
+		}
+
+		ForwardListRemoveOperation removeOp;
+
+		size_type removed = 0;
+		for (auto currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
+			if (pred(currNode->value, nextNode->value)) {
+				nextNode = removeOp.extract_after(currNode);
+				++removed;
+			}
+			else {
+				currNode = nextNode;
+				nextNode = currNode->next;
+			}
+		}
+		return removed;
+	}
+
+	template<class Comp>
+	void _merge(ForwardList<T>& other, Comp comp) {
 		// Merge with other, assuming both lists are sorted and elements are compared using comp
 		if (this == std::addressof(other) || other.is_empty()) {
 			return;
@@ -685,34 +846,35 @@ public:
 			return;
 		}
 
-		_NodePointer beforeFirst	= _data.before_head();
-		_NodePointer beforeMid		= other._data.before_head();
-		_NodePointer midNode		= other._data.head;
+		auto beforeFirst	= _data.before_head();
+		auto beforeMid		= other._data.before_head();
+		auto midNode		= other._data.head;
 		for (;;) {
 			// Find position in the first range where insertion is needed
 			_NodePointer firstNode{};
 			while (true) {
 				firstNode = beforeFirst->next;
 				if (!firstNode) { // First range is exhausted, return
-					beforeFirst->next = midNode;
-					other._data.head = nullptr;
+					beforeFirst->next	= midNode;
+					other._data.head	= nullptr;
 					return;
 				}
 
-				if (comp(midNode->value, firstNode->value)) { // UB
+				if (comp(midNode->value, firstNode->value)) {
 					break;
 				}
 				beforeFirst = firstNode;
 			}
 			// Find sub-range in the second range to insert into the first range
-			_NodePointer currNode = midNode, nextNode{};
+			auto currNode = midNode;
+			_NodePointer nextNode{};
 			while (true) {
 				nextNode = currNode->next;
 				if (!nextNode) { // Second range is exhausted
 					break;
 				}
 
-				if (!comp(nextNode->value, firstNode->value)) { // UB
+				if (!comp(nextNode->value, firstNode->value)) {
 					break;
 				}
 				currNode = nextNode;
@@ -730,106 +892,11 @@ public:
 		}
 	}
 
-	template<class Comp = std::less<>>
-	void sort(Comp comp = Comp{}) noexcept {
-		// Sort whole list using merge sort, elements are compared using comp
-		this->_sort(_data.before_head(), comp);
-	}
-
-private:
-	template<class... Args>
-	void _construct(const size_type count, Args&&... args) {
-		// Construct list using args
-		if (count != 0) {
-			ForwardListInsertOperation<_FwdListValue> insertOp;
-			if constexpr (sizeof...(Args) == 0) {
-				insertOp.append_n(count);
-			}
-			else if constexpr (sizeof...(Args) == 1) {
-				insertOp.append_n(count, args...);
-			}
-			else if constexpr (sizeof...(Args) == 2) {
-				insertOp.append_range(std::forward<Args>(args)...);
-			}
-			else {
-				throw std::logic_error("Should be unreachable");
-			}
-
-			insertOp.attach_after(_data.before_head());
-		}
-	}
-
-	template<class... Args>
-	void _insert_after(_NodePointer node, Args&&... args) {
-		// Insert after node by perfect forwarding args
-		const _NodePointer newNode = static_cast<_NodePointer>(memory::allocate(1, sizeof(_NodeType)));
-		try {
-			memory::construct_in_place(newNode->value, std::forward<Args>(args)...);
-		}
-		catch(...) {
-			// Rollback when node->value's constructor throws
-			memory::deallocate(newNode, sizeof(_NodeType));
-			throw;
-		}
-
-		memory::construct_in_place(newNode->next, node->next);
-		node->next = newNode;
-	}
-
-	void _erase_after(_NodePointer node) noexcept {
-		// Erase after node
-		_NodeType::free_node(std::exchange(node->next, node->next->next)); // UB
-	}
-
-	void _splice_after(_NodePointer node, _NodePointer prevNode) noexcept {
-		// Splice range (prevNode, prevNode + 2) after node
-		if (node != prevNode) {
-			const _NodePointer currNode = prevNode->next;
-			if (node != currNode) {
-				prevNode->next	= currNode->next;
-				currNode->next	= node->next;
-				node->next		= currNode;
-			}
-		}
-	}
-
-	void _splice_after(_NodePointer node, _NodePointer first, _NodePointer last) noexcept {
-		// Splice range (first, last) after node
-		if (first == last || first->next == last) {
-			return;
-		}
-		// Find prev of last
-		_NodePointer currNode = first->next;
-		while (currNode->next != last) {
-			currNode = currNode->next;
-		}
-		// UB: if node is in (first, last), this will lead to 2 unowned, circular node chains
-		const _NodePointer nextNode	= first->next;
-		first->next					= last;
-		currNode->next				= node->next;
-		node->next					= nextNode;
-	}
-
-	template<class UnaryPred>
-	size_type _remove_if_after(UnaryPred pred, _NodePointer first, _NodePointer last) noexcept {
-		// Remove elements satisfying pred in range (first, last)
-		size_type removed = 0;
-		for (_NodePointer currNode = first->next; currNode != last;) {
-			if (pred(currNode->value)) { // UB
-				_NodeType::free_node(std::exchange(first->next, currNode->next));
-				++removed;
-			} else {
-				first = currNode;
-			}
-			currNode = first->next;
-		}
-		return removed;
-	}
-
 	template<class Comp>
-	_NodePointer _merge(_NodePointer beforeFirst, _NodePointer beforeMid, _NodePointer beforeLast, Comp comp) noexcept {
-		// Merge sorted range (beforeFirst, beforeMid] and (beforeMid, beforeLast]
-		for (_NodePointer midNode = beforeMid->next;;) {
+	_NodePointer _inplace_merge(_NodePointer beforeFirst, _NodePointer beforeMid, _NodePointer beforeLast, Comp comp) noexcept {
+		// Merge 2 sorted ranges (beforeFirst, beforeMid] and (beforeMid, beforeLast], both are in *this
+		auto midNode = beforeMid->next;
+		for (;;) {
 			// Find position in the first range where insertion is needed
 			_NodePointer firstNode{};
 			while (true) {
@@ -838,20 +905,21 @@ private:
 					return beforeLast;
 				}
 
-				if (comp(midNode->value, firstNode->value)) { // UB
+				if (comp(midNode->value, firstNode->value)) {
 					break;
 				}
 				beforeFirst = firstNode;
 			}
 			// Find sub-range in the second range to insert into the first range
-			_NodePointer currNode = midNode, nextNode{};
+			auto currNode = midNode;
+			_NodePointer nextNode{};
 			while (true) {
 				nextNode = currNode->next;
 				if (currNode == beforeLast) { // Second range is exhausted
 					break;
 				}
 
-				if (!comp(nextNode->value, firstNode->value)) { // UB
+				if (!comp(nextNode->value, firstNode->value)) {
 					break;
 				}
 				currNode = nextNode;
@@ -870,87 +938,76 @@ private:
 	}
 
 	template<class Comp>
-	_NodePointer _sort(_NodePointer beforeFirst, size_type length, Comp comp) noexcept {
+	_NodePointer _sort2(_NodePointer beforeFirst, Comp comp) {
+		// Sort range (beforeFirst, beforeFirst + 2], or until nullptr is encountered
+		const auto firstNode = beforeFirst->next;
+		if (!firstNode) {
+			return beforeFirst;
+		}
+
+		const auto lastNode = firstNode->next;
+		if (!lastNode || comp(firstNode->value, lastNode->value)) {
+			return firstNode;
+		}
+		// Swap firstNode and lastNode
+		firstNode->next		= lastNode->next;
+		beforeFirst->next	= lastNode;
+		lastNode->next		= firstNode;
+		return lastNode;
+	}
+
+	template<class Comp>
+	_NodePointer _sort_base(_NodePointer beforeFirst, const size_type length, Comp comp) {
 		// Sort range (beforeFirst, beforeFirst + length), or until nullptr is encountered
 		if (length <= 2) {
-			// Sort 2 elements
-			const _NodePointer firstNode = beforeFirst->next;
-			if (!firstNode) {
-				return beforeFirst;
-			}
-
-			const _NodePointer lastNode = firstNode->next;
-			if (!lastNode || comp(firstNode->value, lastNode->value)) { // UB
-				return firstNode;
-			}
-			// Swap firstNode and lastNode
-			firstNode->next = std::exchange(lastNode->next, firstNode);
-			beforeFirst->next = lastNode;
-			return lastNode;
+			return this->_sort2(beforeFirst, comp);
 		}
 		// Sort top-down half length
-		const size_type halfLength = length / 2;
-		const _NodePointer beforeMid = this->_sort(beforeFirst, halfLength, comp);
+		const auto halfLength	= length / 2;
+		const auto beforeMid	= this->_sort_base(beforeFirst, halfLength, comp);
 		if (!beforeMid->next) {
 			return beforeMid;
 		}
 
-		const _NodePointer beforeLast = this->_sort(beforeMid, halfLength, comp);
-		return this->_merge(beforeFirst, beforeMid, beforeLast, comp); // UB
+		const auto beforeLast = this->_sort_base(beforeMid, halfLength, comp);
+		return this->_inplace_merge(beforeFirst, beforeMid, beforeLast, comp);
 	}
 
 	template<class Comp>
 	void _sort(_NodePointer beforeFirst, Comp comp) noexcept {
 		// Sort whole list bottom-up
-		_NodePointer beforeMid = this->_sort(beforeFirst, 2, comp);
-		for (size_type length = 2;; length *= 2) {
+		auto beforeMid = this->_sort2(beforeFirst, comp);
+		
+		size_type length = 2;
+		do {
 			if (!beforeMid->next) {
 				return;
 			}
 
-			const _NodePointer beforeLast = this->_sort(beforeMid, length, comp);
-			beforeMid = this->_merge(beforeFirst, beforeMid, beforeLast, comp); // UB
+			const auto beforeLast	= this->_sort_base(beforeMid, length, comp);
+			beforeMid				= this->_inplace_merge(beforeFirst, beforeMid, beforeLast, comp);
+			
+			length <<= 1; // length *= 2
 		}
+		while (length != 0);
 	}
 
 private:
 	_FwdListValue _data;
 };
 
-#if _MSVC_LANG >= 202002L
 template<class T>
-[[nodiscard]] std::strong_ordering operator<=>(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return lhs.compare(rhs);
-}
-#else
-template<class T>
-[[nodiscard]] bool operator==(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return lhs.compare(rhs) == 0;
+void swap(ForwardList<T>& lhs, ForwardList<T>& rhs) noexcept {
+	lhs.swap(rhs);
 }
 
 template<class T>
-[[nodiscard]] bool operator!=(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return !(lhs == rhs);
+[[nodiscard]] bool operator==(const ForwardList<T>& lhs, const ForwardList<T>& rhs) {
+	return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
 }
 
 template<class T>
-[[nodiscard]] bool operator<(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return lhs.compare(rhs) < 0;
+[[nodiscard]] compare::SynthThreeWayCompareResult<T> operator<=>(const ForwardList<T>& lhs, const ForwardList<T>& rhs) {
+	return std::lexicographical_compare_three_way(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{});
 }
-
-template<class T>
-[[nodiscard]] bool operator>(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return rhs < lhs;
-}
-
-template<class T>
-[[nodiscard]] bool operator<=(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return !(rhs < lhs);
-}
-
-template<class T>
-[[nodiscard]] bool operator>=(const ForwardList<T>& lhs, const ForwardList<T>& rhs) noexcept {
-	return !(lhs < rhs);
-}
-#endif // Has C++20
 #endif // FORWARD_LIST_H

@@ -571,6 +571,18 @@ public:
 		this->_copy(other);
 	}
 
+	AVLTree(AVLTree&& other) noexcept
+		: _data() {
+		// Construct tree by moving from other
+		_data.head = _NodeType::construct_head();
+		_data.swap(other._data);
+	}
+
+	~AVLTree() noexcept {
+		_data.clear(_data.head->parent);
+		_NodeType::free_empty_node(_data.head);
+	}
+
 	AVLTree& operator=(const AVLTree& other) {
 		if (this != std::addressof(other)) {
 			this->clear();
@@ -579,24 +591,12 @@ public:
 		return *this;
 	}
 
-	AVLTree(AVLTree&& other) noexcept
-		: _data() {
-		// Construct tree by moving from other
-		_data.head = _NodeType::construct_head();
-		_data.swap(other._data);
-	}
-
 	AVLTree& operator=(AVLTree&& other) noexcept {
 		if (this != std::addressof(other)) {
 			this->clear();
 			_data.swap(other._data);
 		}
 		return *this;
-	}
-
-	~AVLTree() noexcept {
-		_data.clear(_data.head->parent);
-		_NodeType::free_empty_node(_data.head);
 	}
 
 	[[nodiscard]] iterator begin() noexcept {
@@ -628,7 +628,7 @@ public:
 	}
 
 	[[nodiscard]] const_reference min() const noexcept {
-		return _data.head->left->value; // UB
+		return _data.head->left->value;
 	}
 
 	[[nodiscard]] reference max() noexcept {
@@ -636,7 +636,7 @@ public:
 	}
 
 	[[nodiscard]] const_reference max() const noexcept {
-		return _data.head->right->value; // UB
+		return _data.head->right->value;
 	}
 
 	[[nodiscard]] size_type size() const noexcept {
