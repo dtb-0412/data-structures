@@ -72,12 +72,12 @@ int main() {
 			std::cout << "Correct\n";
 		}
 
-		AVLTree<Int, IntCompare> tree2;
-		tree2.insert(data2.begin(), data2.end());
-		tree2.level_order();
-		std::cout << "\n\n";
+		//AVLTree<Int, IntCompare> tree2;
+		//tree2.insert(data2.begin(), data2.end());
+		//tree2.level_order();
+		//std::cout << "\n\n";
 
-		tree.merge(tree2);
+		//tree.merge(tree2);
 
 		printer::Printer printer;
 		printer.sep(", ").alt("Empty\n");

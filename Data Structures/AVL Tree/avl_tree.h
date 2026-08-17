@@ -163,9 +163,9 @@ struct AVLTreeNode {
 	[[nodiscard]] static node_pointer construct_head() {
 		// Construct empty head sentinel with no value
 		const auto newHead = static_cast<node_pointer>(memory::allocate(1, sizeof(AVLTreeNode)));
-		memory::construct_at(std::addressof(newHead->left));	// Any value is fine, will be reassigned when new node is inserted
-		memory::construct_at(std::addressof(newHead->right));
-		memory::construct_at(std::addressof(newHead->parent));	// Parent must be nullptr, or everything fails!
+		memory::construct_at(std::addressof(newHead->left), newHead);	// Any value is fine, will be reassigned when new node is inserted
+		memory::construct_at(std::addressof(newHead->right), newHead);
+		memory::construct_at(std::addressof(newHead->parent), newHead);	// Parent must be nullptr, or everything fails!
 		newHead->height = 0;
 		newHead->isHead = true;
 		return newHead;
@@ -179,7 +179,7 @@ struct AVLTreeNode {
 		memory::construct_at(std::addressof(guard.node->value), std::forward<Args>(args)...);
 		memory::construct_at(std::addressof(guard.node->left));		// Left and right of leaf node must be nullptr
 		memory::construct_at(std::addressof(guard.node->right));
-		memory::construct_at(std::addressof(guard.node->parent));	// Any value is fine, will be reassigned during insertion
+		memory::construct_at(std::addressof(guard.node->parent), guard.node);	// Any value is fine, will be reassigned during insertion
 		guard.node->height = 1;
 		guard.node->isHead = false;
 		return guard.release();
@@ -422,7 +422,8 @@ public:
 		AVLTreeValue::update_height(newNode); // Reset node height for correct rebalancing
 
 		for (;;) {
-			if (node == head) { // Reach head before rebalancing
+			if (node->isHead) { // Reach head before rebalancing
+				std::cout << "[1]\n";
 				return;
 			}
 
@@ -435,7 +436,8 @@ public:
 
 		for (;;) { // Update the remaining nodes height
 			node = node->parent;
-			if (node == head) {
+			if (node->isHead) {
+				std::cout << "[2]\n";
 				return;
 			}
 
@@ -446,7 +448,7 @@ public:
 	node_pointer insert(const NodeLocation<node_pointer> location, node_pointer newNode) noexcept {
 		// Insert newNode at location
 		++size;
-		if (!location.parent) { // First node in tree
+		if (location.parent == head) { // First node in tree
 			newNode->parent = head;
 			head->left		= newNode;
 			head->right		= newNode;
@@ -594,7 +596,7 @@ private:
 			memory::construct_at(std::addressof(base.node->value), std::forward<Args>(args)...);
 			memory::construct_at(std::addressof(base.node->left));
 			memory::construct_at(std::addressof(base.node->right));
-			memory::construct_at(std::addressof(base.node->parent));
+			memory::construct_at(std::addressof(base.node->parent), base.node);
 			base.node->height = 1;
 			base.node->isHead = false;
 		}
@@ -1141,7 +1143,12 @@ private:
 			Average case:	O(log2(N))
 		*/
 		NodeFindResult<_NodePointer> result{ { _data.head->parent, NodeChild::RIGHT }, _data.head };
-		for (_NodePointer currNode = result.location.parent; currNode;) {
+		//if (result.location.parent->isHead) {
+		//	std::cout << "Here\n";
+		//	return result;
+		//}
+
+		for (_NodePointer currNode = result.location.parent; currNode && !currNode->isHead;) {
 			result.location.parent = currNode;
 			if (_comp(currNode->value, key)) {
 				result.location.child = NodeChild::RIGHT;
