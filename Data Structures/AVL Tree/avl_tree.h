@@ -2,23 +2,20 @@
 #ifndef ALV_TREE_H
 #define ALV_TREE_H
 
-#include<functional>
 #include<iostream>
-#include<queue>
-#include<stdexcept>
 
+#include"concepts.hpp"
+#include"memory.hpp"
 #include"node_handle.h"
-#include"type_traits.hpp"
-#include"utility.hpp"
 
-enum TreeOrder {
-	PRE_ORDER, IN_ORDER, POST_ORDER, LEVEL_ORDER
-};
+//enum TreeOrder {
+//	PRE_ORDER, IN_ORDER, POST_ORDER, LEVEL_ORDER
+//};
 
 template<class AVLTreeVal>
 class AVLTreeConstIterator {
 private:
-	using _NodePointer	= typename AVLTreeVal::NodePointer;
+	using _NodePointer = typename AVLTreeVal::NodePointer;
 
 public:
 	using iterator_category = std::bidirectional_iterator_tag;
@@ -28,10 +25,12 @@ public:
 	using reference			= const value_type&;
 
 	AVLTreeConstIterator() noexcept
-		: ptr() {}
+		: ptr() {
+	}
 
-	AVLTreeConstIterator(const _NodePointer ptr) noexcept
-		: ptr(ptr) {}
+	AVLTreeConstIterator(_NodePointer ptr) noexcept
+		: ptr(ptr) {
+	}
 
 	[[nodiscard]] reference operator*() const noexcept {
 		return ptr->value; // UB: nullptr or end() dereference
@@ -107,7 +106,7 @@ public:
 template<class AVLTreeVal>
 class AVLTreeIterator : public AVLTreeConstIterator<AVLTreeVal> {
 private:
-	using _BaseIter	= AVLTreeConstIterator<AVLTreeVal>;
+	using _BaseIter = AVLTreeConstIterator<AVLTreeVal>;
 	using _BaseIter::_BaseIter;
 
 public:
@@ -157,14 +156,14 @@ struct AVLTreeNode {
 
 	AVLTreeNode() = default;
 
-	AVLTreeNode(const AVLTreeNode&)				= delete;
-	AVLTreeNode& operator=(const AVLTreeNode&)	= delete;
+	AVLTreeNode(const AVLTreeNode&) = delete;
+	AVLTreeNode& operator=(const AVLTreeNode&) = delete;
 
 	[[nodiscard]] static NodePointer construct_head() {
 		// Construct empty head node, no value
 		const NodePointer newHead = static_cast<NodePointer>(memory::allocate(1, sizeof(AVLTreeNode)));
-		memory::construct_in_place(newHead->left, newHead);
-		memory::construct_in_place(newHead->right, newHead);
+		memory::construct_at(std::addressof(newHead->left), newHead);
+		memory::construct_at(std::addressof(newHead->right), newHead);
 		newHead->parent = nullptr;
 		newHead->isHead = true;
 		return newHead;
@@ -174,9 +173,9 @@ struct AVLTreeNode {
 	[[nodiscard]] static NodePointer construct_node(Args&&... args) {
 		// Construct node from args
 		const NodePointer newNode = static_cast<NodePointer>(memory::allocate(1, sizeof(AVLTreeNode)));
-		memory::construct_in_place(newNode->value, std::forward<Args>(args)...);
-		newNode->left	= nullptr;
-		newNode->right	= nullptr;
+		memory::construct_at(std::addressof(newNode->value), std::forward<Args>(args)...);
+		newNode->left = nullptr;
+		newNode->right = nullptr;
 		newNode->parent = nullptr;
 		newNode->height = 1;
 		newNode->isHead = false;
@@ -185,17 +184,15 @@ struct AVLTreeNode {
 
 	static void free_empty_node(NodePointer node) noexcept {
 		// Destroy pointer members and deallocate node memory. Only empty nodes should be passed (after destroying value members in free_node() or head node)
-		memory::destruct_in_place(node->left);
-		memory::destruct_in_place(node->right);
-		memory::destruct_in_place(node->parent);
-		memory::deallocate(node, 1);
+		memory::destruct_at(std::addressof(node->left));
+		memory::destruct_at(std::addressof(node->right));
+		memory::destruct_at(std::addressof(node->parent));
+		memory::deallocate(node, sizeof(AVLTreeNode));
 	}
 
 	static void free_node(NodePointer node) noexcept {
 		// Destroy entire node, along with its value
-		memory::destruct_in_place(node->value);
-		memory::destruct_in_place(node->height);
-		memory::destruct_in_place(node->isHead);
+		memory::destruct_at(std::addressof(node->value));
 		free_empty_node(node);
 	}
 
@@ -230,16 +227,16 @@ struct AVLTreeNode {
 
 	ValueType	value;	// sizeof(ValueType)
 	HeightType	height; // 1 byte, assuming AVL tree height <= 255
-	
+
 	bool isHead;		// 1 byte boolean
 };
 
 template<class NodeT>
 struct AVLTreeTempNode {
 	// Struct to temporarily store a constructed node
-	using NodeType		= NodeT;
-	using NodePointer	= typename NodeType::NodePointer;
-	using ValueType		= typename NodeType::ValueType;
+	using NodeType = NodeT;
+	using NodePointer = typename NodeType::NodePointer;
+	using ValueType = typename NodeType::ValueType;
 
 
 	template<class... Args>
@@ -248,8 +245,8 @@ struct AVLTreeTempNode {
 		ptr = NodeType::construct_node(std::forward<Args>(args)...);
 	}
 
-	AVLTreeTempNode(const AVLTreeTempNode&)				= delete;
-	AVLTreeTempNode& operator=(const AVLTreeTempNode&)	= delete;
+	AVLTreeTempNode(const AVLTreeTempNode&) = delete;
+	AVLTreeTempNode& operator=(const AVLTreeTempNode&) = delete;
 
 	~AVLTreeTempNode() noexcept {
 		if (ptr) {
@@ -294,18 +291,18 @@ struct NodeFindHintResult {
 template<class ValueT, class SizeT, class DiffT, class Ptr, class ConstPtr, class NodeT>
 class AVLTreeValue {
 public:
-	using NodeType		= NodeT;
-	using NodePointer	= typename NodeType::NodePointer;
-	using HeightType	= typename NodeType::HeightType;
-	using BalanceType	= typename NodeType::BalanceType;
+	using NodeType = NodeT;
+	using NodePointer = typename NodeType::NodePointer;
+	using HeightType = typename NodeType::HeightType;
+	using BalanceType = typename NodeType::BalanceType;
 
-	using ValueType			= ValueT;
-	using SizeType			= SizeT;
-	using DifferenceType	= DiffT;
-	using Pointer			= Ptr;
-	using ConstPointer		= ConstPtr;
-	using Reference			= ValueType&;
-	using ConstReference	= const ValueType&;
+	using ValueType = ValueT;
+	using SizeType = SizeT;
+	using DifferenceType = DiffT;
+	using Pointer = Ptr;
+	using ConstPointer = ConstPtr;
+	using Reference = ValueType&;
+	using ConstReference = const ValueType&;
 
 	AVLTreeValue() noexcept
 		: head(), size(0) {
@@ -335,8 +332,8 @@ public:
 	[[nodiscard]] static BalanceType get_balance_factor(const NodePointer node) noexcept {
 		// Get balance factor at node
 		if (node) {
-			const auto leftHeight	= AVLTreeValue::get_height(node->left);
-			const auto rightHeight	= AVLTreeValue::get_height(node->right);
+			const auto leftHeight = AVLTreeValue::get_height(node->left);
+			const auto rightHeight = AVLTreeValue::get_height(node->right);
 			return static_cast<BalanceType>(rightHeight - leftHeight);
 		}
 		return 0;
@@ -344,21 +341,21 @@ public:
 
 	static void update_height(const NodePointer node) noexcept {
 		// Update node height
-		const auto leftHeight	= AVLTreeValue::get_height(node->left);
-		const auto rightHeight	= AVLTreeValue::get_height(node->right);
+		const auto leftHeight = AVLTreeValue::get_height(node->left);
+		const auto rightHeight = AVLTreeValue::get_height(node->right);
 		node->height = static_cast<HeightType>(std::max(leftHeight, rightHeight) + 1);
 	}
 
 	void rotate_left(const NodePointer oldRoot) noexcept {
 		// Perform counter-clockwise rotation on subtree at oldRoot
-		const NodePointer parent	= oldRoot->parent;
-		const NodePointer newRoot	= oldRoot->right;
-		const NodePointer child		= newRoot->left;
+		const NodePointer parent = oldRoot->parent;
+		const NodePointer newRoot = oldRoot->right;
+		const NodePointer child = newRoot->left;
 
 		parent->replace_child(oldRoot, newRoot);
 		oldRoot->parent = newRoot;
-		oldRoot->right	= child;
-		newRoot->left	= oldRoot;
+		oldRoot->right = child;
+		newRoot->left = oldRoot;
 
 		if (child) { // Reattach newRoot's left child to oldRoot
 			child->parent = oldRoot;
@@ -370,14 +367,14 @@ public:
 
 	void rotate_right(const NodePointer oldRoot) noexcept {
 		// Perform clockwise rotation on subtree at oldRoot
-		const NodePointer parent	= oldRoot->parent;
-		const NodePointer newRoot	= oldRoot->left;
-		const NodePointer child		= newRoot->right;
+		const NodePointer parent = oldRoot->parent;
+		const NodePointer newRoot = oldRoot->left;
+		const NodePointer child = newRoot->right;
 
 		parent->replace_child(oldRoot, newRoot);
 		oldRoot->parent = newRoot;
-		oldRoot->left	= child;
-		newRoot->right	= oldRoot;
+		oldRoot->left = child;
+		newRoot->right = oldRoot;
 
 		if (child) { // Reattach newRoot's right child to oldRoot
 			child->parent = oldRoot;
@@ -442,9 +439,9 @@ public:
 		++size;
 		if (!location.parent) { // First node in tree
 			newNode->parent = head;
-			head->left		= newNode;
-			head->right		= newNode;
-			head->parent	= newNode;
+			head->left = newNode;
+			head->right = newNode;
+			head->parent = newNode;
 			return newNode;
 		}
 
@@ -470,9 +467,9 @@ public:
 		// Extract node pointed by pos
 		--size;
 		const NodePointer extracted = pos.getPointer(); // UB: pos == AVLTree::end()
-		const NodePointer nextNode	= std::next(pos, 1).getPointer();
+		const NodePointer nextNode = std::next(pos, 1).getPointer();
 		if (size == 0) { // Extract final node
-			head->left	= nullptr;
+			head->left = nullptr;
 			head->right = nullptr;
 		}
 		else if (extracted == head->left) { // Extract leftmost node
@@ -540,23 +537,23 @@ public:
 template<class T, class Comp = std::less<>>
 class AVLTree {
 public:
-	using value_type		= T;
-	using size_type			= std::size_t;
-	using difference_type	= std::ptrdiff_t;
-	using pointer			= T*;
-	using const_pointer		= const T*;
-	using reference			= T&;
-	using const_reference	= const T&;
+	using value_type = T;
+	using size_type = std::size_t;
+	using difference_type = std::ptrdiff_t;
+	using pointer = T*;
+	using const_pointer = const T*;
+	using reference = T&;
+	using const_reference = const T&;
 
 private:
-	using _NodeType		= AVLTreeNode<value_type, uint8_t, int8_t>;
-	using _NodePointer	= typename _NodeType::NodePointer;
+	using _NodeType = AVLTreeNode<value_type, uint8_t, int8_t>;
+	using _NodePointer = typename _NodeType::NodePointer;
 
-	using _AVLTreeValue	= AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
+	using _AVLTreeValue = AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
 
 public:
-	using iterator			= AVLTreeConstIterator<_AVLTreeValue>;
-	using const_iterator	= AVLTreeConstIterator<_AVLTreeValue>;
+	using iterator = AVLTreeConstIterator<_AVLTreeValue>;
+	using const_iterator = AVLTreeConstIterator<_AVLTreeValue>;
 
 	AVLTree()
 		: _data() {
@@ -571,18 +568,6 @@ public:
 		this->_copy(other);
 	}
 
-	AVLTree(AVLTree&& other) noexcept
-		: _data() {
-		// Construct tree by moving from other
-		_data.head = _NodeType::construct_head();
-		_data.swap(other._data);
-	}
-
-	~AVLTree() noexcept {
-		_data.clear(_data.head->parent);
-		_NodeType::free_empty_node(_data.head);
-	}
-
 	AVLTree& operator=(const AVLTree& other) {
 		if (this != std::addressof(other)) {
 			this->clear();
@@ -591,12 +576,24 @@ public:
 		return *this;
 	}
 
+	AVLTree(AVLTree&& other) noexcept
+		: _data() {
+		// Construct tree by moving from other
+		_data.head = _NodeType::construct_head();
+		_data.swap(other._data);
+	}
+
 	AVLTree& operator=(AVLTree&& other) noexcept {
 		if (this != std::addressof(other)) {
 			this->clear();
 			_data.swap(other._data);
 		}
 		return *this;
+	}
+
+	~AVLTree() noexcept {
+		_data.clear(_data.head->parent);
+		_NodeType::free_empty_node(_data.head);
 	}
 
 	[[nodiscard]] iterator begin() noexcept {
@@ -628,7 +625,7 @@ public:
 	}
 
 	[[nodiscard]] const_reference min() const noexcept {
-		return _data.head->left->value;
+		return _data.head->left->value; // UB
 	}
 
 	[[nodiscard]] reference max() noexcept {
@@ -636,7 +633,7 @@ public:
 	}
 
 	[[nodiscard]] const_reference max() const noexcept {
-		return _data.head->right->value;
+		return _data.head->right->value; // UB
 	}
 
 	[[nodiscard]] size_type size() const noexcept {
@@ -684,9 +681,9 @@ public:
 		return this->emplace_hint(hint, std::move(val));
 	}
 
-	template<class InputIter,
-		std::enable_if_t<traits::is_input_iter<InputIter>, bool> = true>
-	void insert(InputIter first, const InputIter last) {
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
+	void insert(It first, const It last) {
 		// Insert range [first, last)
 		for (; first != last; ++first) {
 			this->_emplace_hint(_data.head, *first);
@@ -724,11 +721,12 @@ public:
 
 		Intentional SFINAE with Comp
 	*/
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<
-			traits::is_transparent<Comp> &&
-			!std::is_convertible_v<KeyT, iterator> &&
-			!std::is_convertible_v<KeyT, const_iterator>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+			typename Comp2::is_transparent;
+			requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+			requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+		}
 	bool erase(const KeyT& key) noexcept {
 		// Erase key
 		const auto result = this->_find_lower_bound(key);
@@ -742,8 +740,8 @@ public:
 	void clear() noexcept {
 		// Erase all
 		_data.clear(std::exchange(_data.head->parent, nullptr));
-		_data.head->left	= _data.head;
-		_data.head->right	= _data.head;
+		_data.head->left = _data.head;
+		_data.head->right = _data.head;
 		_data.size = 0;
 	}
 
@@ -766,15 +764,23 @@ public:
 		return const_iterator(this->_find(key));
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] iterator find(const KeyT& key) {
 		// Find element equivalent to key
 		return iterator(this->_find(key));
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] const_iterator find(const KeyT& key) const {
 		// Find element equivalent to key
 		return const_iterator(this->_find(key));
@@ -785,8 +791,12 @@ public:
 		return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] bool contains(const KeyT& key) const {
 		// Check if tree contains element equivalent to key
 		return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
@@ -797,13 +807,17 @@ public:
 		return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] size_type count(const KeyT& key) const {
 		// Count occurrences of value equivalent to key
 		return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
 	}
-	
+
 	[[nodiscard]] iterator lower_bound(const value_type& key) {
 		// Find the first element not less than key
 		return iterator(this->_find_lower_bound(key).bound);
@@ -814,15 +828,23 @@ public:
 		return const_iterator(this->_find_lower_bound(key).bound);
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] iterator lower_bound(const KeyT& key) {
 		// Find the first equivalent element not less than key
 		return iterator(this->_find_lower_bound(key).bound);
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] const_iterator lower_bound(const KeyT& key) const {
 		// Find the first equivalent element not less than key
 		return const_iterator(this->_find_lower_bound(key).bound);
@@ -838,15 +860,23 @@ public:
 		return const_iterator(this->_find_upper_bound(key).bound);
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] iterator upper_bound(const KeyT& key) {
 		// Find the first equivalent element greater than key
 		return iterator(this->_find_upper_bound(key).bound);
 	}
 
-	template<class KeyT, class Comp2 = Comp,
-		std::enable_if_t<traits::is_transparent<Comp2>, int> = 0>
+	template<class KeyT, class Comp2 = Comp>
+		requires requires {
+		typename Comp2::is_transparent;
+		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+	}
 	[[nodiscard]] const_iterator upper_bound(const KeyT& key) const {
 		// Find the first equivalent element greater than key
 		return const_iterator(this->_find_upper_bound(key).bound);
@@ -875,9 +905,9 @@ public:
 
 			this->_check_max_size();
 			// Extract from other and reset links
-			const auto extracted	= other._data.extract(const_iterator(currNode)).first;
-			extracted->left			= nullptr;
-			extracted->right		= nullptr;
+			const auto extracted = other._data.extract(const_iterator(currNode)).first;
+			extracted->left = nullptr;
+			extracted->right = nullptr;
 			// Insert back into *this
 			_data.insert(result.location, extracted); // Handle extracted->parent and extracted->height
 		}
@@ -921,7 +951,7 @@ public:
 
 		this->_check_max_size();
 
-		node->left	= nullptr;
+		node->left = nullptr;
 		node->right = nullptr;
 		const auto inserted = _data.insert(result.location, handle._release());
 		return InsertReturnType<iterator, NodeHandle>{iterator(inserted), true, std::move(handle)};
@@ -940,49 +970,49 @@ public:
 
 		this->_check_max_size();
 
-		node->left	= nullptr;
+		node->left = nullptr;
 		node->right = nullptr;
 		const auto inserted = _data.insert(result.location, handle._release());
 		return iterator(inserted);
 	}
 #endif // Has C++17
 
-	struct DefaultPrint {
-		// Default print functor
-		template<class NodePointer>
-		void operator()(NodePointer node) const noexcept {
-			std::cout << node->value << " ";
-		}
-	};
+	//struct DefaultPrint {
+	//	// Default print functor
+	//	template<class NodePointer>
+	//	void operator()(NodePointer node) const noexcept {
+	//		std::cout << node->value << " ";
+	//	}
+	//};
 
-	template<class PrintFnc = DefaultPrint, Sep>
-	void print(const TreeOrder order, PrintFnc print = PrintFnc{}) {
-		// Print tree in specified order using print function
-		const _NodePointer root = _data.head->parent;
-		if (!root) {
-			return;
-		}
+	//template<class PrintFnc = DefaultPrint, Sep>
+	//void print(const TreeOrder order, PrintFnc print = PrintFnc{}) {
+	//	// Print tree in specified order using print function
+	//	const _NodePointer root = _data.head->parent;
+	//	if (!root) {
+	//		return;
+	//	}
 
-		switch (order) {
-			case PRE_ORDER: {
-				this->_pre_order(root, print);
-				break;
-			}
-			case IN_ORDER: {
-				this->_in_order(root, print);
-				break;
-			}
-			case POST_ORDER: {
-				this->_post_order(root, print);
-				break;
-			}
-			case LEVEL_ORDER: {
-				this->_level_order(root, print);
-				break;
-			}
-		}
-		std::cout << "\n";
-	}
+	//	switch (order) {
+	//		case PRE_ORDER: {
+	//			this->_pre_order(root, print);
+	//			break;
+	//		}
+	//		case IN_ORDER: {
+	//			this->_in_order(root, print);
+	//			break;
+	//		}
+	//		case POST_ORDER: {
+	//			this->_post_order(root, print);
+	//			break;
+	//		}
+	//		case LEVEL_ORDER: {
+	//			this->_level_order(root, print);
+	//			break;
+	//		}
+	//	}
+	//	std::cout << "\n";
+	//}
 
 private:
 	_NodePointer _copy_node(value_type& val) {
@@ -1000,8 +1030,8 @@ private:
 
 		newRoot->parent = newHead;
 		newRoot->height = oldRoot->height;
-		newRoot->left	= this->_copy_subtree(oldRoot->left, newRoot);
-		newRoot->right	= this->_copy_subtree(oldRoot->right, newRoot);
+		newRoot->left = this->_copy_subtree(oldRoot->left, newRoot);
+		newRoot->right = this->_copy_subtree(oldRoot->right, newRoot);
 		return newRoot;
 	}
 
@@ -1011,12 +1041,12 @@ private:
 		_data.size = other._data.size;
 		// Update leftmost and rightmost nodes
 		if (_data.head->parent == nullptr) { // Empty tree
-			_data.head->left	= _data.head;
-			_data.head->right	= _data.head;
+			_data.head->left = _data.head;
+			_data.head->right = _data.head;
 		}
 		else { // Non-empty tree, find min and max
-			_data.head->left	= _AVLTreeValue::min(_data.head->parent);
-			_data.head->right	= _AVLTreeValue::max(_data.head->parent);
+			_data.head->left = _AVLTreeValue::min(_data.head->parent);
+			_data.head->right = _AVLTreeValue::max(_data.head->parent);
 		}
 	}
 
@@ -1030,7 +1060,7 @@ private:
 	[[nodiscard]] NodeFindResult<_NodePointer> _find_lower_bound(const KeyT& key) const {
 		/*
 			Find the smallest (or leftmost in-order) node that is not less than key (or does not satisfy _comp(node value, key))
-			
+
 			Traverse the whole path downwards from root until nullptr is reached.
 			At each node, perform exactly 01 comparison using _comp::operator() on key and node value.
 
@@ -1043,13 +1073,13 @@ private:
 		for (_NodePointer currNode = result.location.parent; currNode;) {
 			result.location.parent = currNode;
 			if (_comp(currNode->value, key)) {
-				result.location.child	= NodeChild::RIGHT;
-				currNode				= currNode->right;
+				result.location.child = NodeChild::RIGHT;
+				currNode = currNode->right;
 			}
 			else {
-				result.location.child	= NodeChild::LEFT;
-				result.bound			= currNode;
-				currNode				= currNode->left;
+				result.location.child = NodeChild::LEFT;
+				result.bound = currNode;
+				currNode = currNode->left;
 			}
 		}
 		return result;
@@ -1062,13 +1092,13 @@ private:
 		for (_NodePointer currNode = result.location.parent; currNode;) {
 			result.location.parent = currNode;
 			if (_comp(key, currNode->value)) {
-				result.location.child	= NodeChild::LEFT;
-				result.bound			= currNode;
-				currNode				= currNode->left;
+				result.location.child = NodeChild::LEFT;
+				result.bound = currNode;
+				currNode = currNode->left;
 			}
 			else {
-				result.location.child	= NodeChild::RIGHT;
-				currNode				= currNode->right;
+				result.location.child = NodeChild::RIGHT;
+				currNode = currNode->right;
 			}
 		}
 		return result;
@@ -1189,64 +1219,64 @@ private:
 		}
 	}
 
-	template<class PrintFnc>
-	void _pre_order(_NodePointer node, PrintFnc print) {
-		// Print subtree at node in pre-order
-		if (!node) {
-			return;
-		}
+	//template<class PrintFnc>
+	//void _pre_order(_NodePointer node, PrintFnc print) {
+	//	// Print subtree at node in pre-order
+	//	if (!node) {
+	//		return;
+	//	}
 
-		print(node);
-		this->_pre_order(node->left, print);
-		this->_pre_order(node->right, print);
-	}
+	//	print(node);
+	//	this->_pre_order(node->left, print);
+	//	this->_pre_order(node->right, print);
+	//}
 
-	template<class PrintFnc>
-	void _in_order(_NodePointer node, PrintFnc print) {
-		// Print subtree at node in in-order
-		if (!node) {
-			return;
-		}
+	//template<class PrintFnc>
+	//void _in_order(_NodePointer node, PrintFnc print) {
+	//	// Print subtree at node in in-order
+	//	if (!node) {
+	//		return;
+	//	}
 
-		this->_in_order(node->left, print);
-		print(node);
-		this->_in_order(node->right, print);
-	}
+	//	this->_in_order(node->left, print);
+	//	print(node);
+	//	this->_in_order(node->right, print);
+	//}
 
-	template<class PrintFnc>
-	void _post_order(_NodePointer node, PrintFnc print) {
-		// Print subtree at node in post-order
-		if (!node) {
-			return;
-		}
+	//template<class PrintFnc>
+	//void _post_order(_NodePointer node, PrintFnc print) {
+	//	// Print subtree at node in post-order
+	//	if (!node) {
+	//		return;
+	//	}
 
-		this->_post_order(node->left, print);
-		this->_post_order(node->right, print);
-		print(node);
-	}
+	//	this->_post_order(node->left, print);
+	//	this->_post_order(node->right, print);
+	//	print(node);
+	//}
 
-	template<class PrintFnc>
-	void _level_order(_NodePointer root, PrintFnc print) {
-		// Print subtree at node in level-order
-		if (!root) {
-			return;
-		}
+	//template<class PrintFnc>
+	//void _level_order(_NodePointer root, PrintFnc print) {
+	//	// Print subtree at node in level-order
+	//	if (!root) {
+	//		return;
+	//	}
 
-		std::queue<_NodePointer> nodesQueue;
-		nodesQueue.push(root);
-		while (!nodesQueue.is_empty()) {
-			const _NodePointer node = nodesQueue.front();
-			print(node);
+	//	std::queue<_NodePointer> nodesQueue;
+	//	nodesQueue.push(root);
+	//	while (!nodesQueue.is_empty()) {
+	//		const _NodePointer node = nodesQueue.front();
+	//		print(node);
 
-			nodesQueue.pop();
-			if (node->left) {
-				nodesQueue.push(node->left);
-			}
-			if (node->right) {
-				nodesQueue.push(node->right);
-			}
-		}
-	}
+	//		nodesQueue.pop();
+	//		if (node->left) {
+	//			nodesQueue.push(node->left);
+	//		}
+	//		if (node->right) {
+	//			nodesQueue.push(node->right);
+	//		}
+	//	}
+	//}
 
 private:
 	_AVLTreeValue	_data;

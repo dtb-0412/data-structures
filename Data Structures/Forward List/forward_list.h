@@ -2,8 +2,6 @@
 #ifndef FORWARD_LIST_H
 #define FORWARD_LIST_H
 
-#include<stdexcept>
-
 #include"compare.hpp"
 #include"memory.hpp"
 
@@ -107,7 +105,7 @@ struct ForwardListNode {
 		memory::deallocate(node, sizeof(ForwardListNode));
 	}
 
-	node_pointer	next; // Member next MUST come first.
+	node_pointer	next;	// Member next MUST come first.
 	value_type		value;
 };
 
@@ -143,16 +141,17 @@ public:
 		*/
 		return static_cast<node_pointer>(std::addressof(	// Step 3: Take the address of the pseudo node and cast it to a node_pointer.
 			reinterpret_cast<node_type&>(					// Step 2: Reinterpret cast head from a node_pointer to a node_type&.
-			const_cast<node_pointer&>(head)					// Step 1: Const cast head to allow modification.
-		)));
+				const_cast<node_pointer&>(head)				// Step 1: Const cast head to allow modification.
+			)
+		));
 	}
 
 	void clear() noexcept {
-		auto currNode = std::exchange(head, nullptr);
-		auto nextNode = node_pointer{};
-		for (; currNode; currNode = nextNode) {
-			nextNode = currNode->next;
+		node_pointer currNode = std::exchange(head, nullptr);
+		while (currNode) {
+			const node_pointer nextNode = currNode->next;
 			node_type::free_node(currNode);
+			currNode = nextNode;
 		}
 	}
 
@@ -255,7 +254,7 @@ private:
 
 		_NodePointer attach_after(_NodePointer node) noexcept {
 			// Attach elements in *this after node, reset *this to default-initialized state
-			const auto oldTail = tail;
+			const _NodePointer oldTail = tail;
 			if (oldTail == _NodePointer{}) {
 				return node;
 			}
@@ -290,9 +289,9 @@ private:
 		ForwardListRemoveGuard& operator=(const ForwardListRemoveGuard&)	= delete;
 
 		~ForwardListRemoveGuard() {
-			auto subject = head;
+			_NodePointer subject = head;
 			while (subject) {
-				const auto nextNode = subject->next;
+				const _NodePointer nextNode = subject->next;
 				memory::destruct_at(std::addressof(subject->next));
 				memory::destruct_at(std::addressof(subject->value));
 				memory::deallocate(subject, sizeof(_NodeType));
@@ -302,8 +301,8 @@ private:
 
 		_NodePointer extract_after( _NodePointer prevNode) noexcept {
 			// Extract node after prevNode from the list and add it to the remove queue
-			const auto removed	= prevNode->next;
-			const auto nextNode = removed->next;
+			const _NodePointer removed	= prevNode->next;
+			const _NodePointer nextNode = removed->next;
 
 			removed->next	= nullptr;
 			prevNode->next	= nextNode;
@@ -526,11 +525,11 @@ public:
 
 	iterator erase_after(const_iterator first, const_iterator last) noexcept {
 		// Erase range (first, last)
-		const auto currNode = first.ptr;
-		const auto lastNode = last.ptr;
+		const _NodePointer currNode = first.ptr;
+		const _NodePointer lastNode = last.ptr;
 		if (currNode != lastNode) {
 			for (;;) {
-				const auto subject = currNode->next;
+				const _NodePointer subject = currNode->next;
 				if (subject == lastNode) {
 					break;
 				}
@@ -644,9 +643,9 @@ public:
 			return;
 		}
 
-		auto prevNode = _NodePointer{};
-		auto currNode = _data.head;
-		auto nextNode = currNode->next;
+		_NodePointer prevNode{};
+		_NodePointer currNode = _data.head;
+		_NodePointer nextNode = currNode->next;
 		for (;;) {
 			currNode->next = prevNode;
 			if (!nextNode) {
@@ -677,7 +676,6 @@ private:
 		else {
 			static_assert(false, "Unexpected number of arguments");
 		}
-
 		guard.attach_after(_data.before_head());
 	}
 
@@ -694,9 +692,9 @@ private:
 	template<class It, class Se>
 	void _assign_range(It first, Se last) {
 		// Assign range [first, last)
-		auto currNode = _data.before_head();
+		_NodePointer currNode = _data.before_head();
 		for (; first != last; ++first) {
-			const auto nextNode = currNode->next;
+			const _NodePointer nextNode = currNode->next;
 			if (!nextNode) {
 				// Runs out of nodes, insert the remaining nodes to *this
 				ForwardListInsertGuard guard;
@@ -709,8 +707,8 @@ private:
 			currNode = nextNode;
 		}
 		// Trim excessive nodes from *this
-		for (auto subject = std::exchange(currNode->next, nullptr); subject;) {
-			const auto nextNode = subject->next;
+		for (_NodePointer subject = std::exchange(currNode->next, nullptr); subject;) {
+			const _NodePointer nextNode = subject->next;
 			_NodeType::free_node(subject);
 			subject = nextNode;
 		}
@@ -718,18 +716,18 @@ private:
 
 	void _erase_after(_NodePointer node) noexcept {
 		// Erase after node
-		auto subject	= node->next;
-		node->next		= subject->next;
+		_NodePointer subject = node->next;
+		node->next = subject->next;
 		_NodeType::free_node(subject);
 	}
 
 	void _splice_after(const_iterator where, const_iterator first) noexcept {
 		// Splice one node in range (first, first + 2) after where
-		const auto whereNode	= where.ptr;
-		const auto currNode		= first.ptr;
+		const _NodePointer whereNode	= where.ptr;
+		const _NodePointer currNode		= first.ptr;
 
 		if (whereNode != currNode) {
-			const auto nextNode = currNode->next;
+			const _NodePointer nextNode = currNode->next;
 			if (whereNode != nextNode) {
 				currNode->next	= nextNode->next;
 				nextNode->next	= whereNode->next;
@@ -745,23 +743,23 @@ private:
 			return;
 		}
 
-		const auto whereNode	= where.ptr;
-		const auto firstNode	= first.ptr;
-		const auto lastNode		= last.ptr;
+		const _NodePointer whereNode	= where.ptr;
+		const _NodePointer firstNode	= first.ptr;
+		const _NodePointer lastNode		= last.ptr;
 		// Find prev of last
-		auto nextNode = firstNode->next;
+		_NodePointer nextNode = firstNode->next;
 		if (nextNode == lastNode) {
 			return;
 		}
 
-		auto currNode = firstNode;
+		_NodePointer currNode = firstNode;
 		do {
 			currNode = nextNode;
 			nextNode = nextNode->next;
 		}
 		while (nextNode != lastNode);
 		// UB: if where is in range (first, last), this will lead to 2 unowned, circular node chains
-		const auto extractedHead = firstNode->next;
+		const _NodePointer extractedHead = firstNode->next;
 		firstNode->next = nextNode;
 		currNode->next	= whereNode->next;
 		whereNode->next = extractedHead;
@@ -777,7 +775,7 @@ private:
 		ForwardListRemoveGuard guard;
 
 		size_type removed = 0;
-		for (auto currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
+		for (_NodePointer currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
 			if (pred(nextNode->value)) {
 				nextNode = guard.extract_after(currNode);
 				++removed;
@@ -800,7 +798,7 @@ private:
 		ForwardListRemoveGuard guard;
 
 		size_type removed = 0;
-		for (auto currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
+		for (_NodePointer currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
 			if (pred(currNode->value, nextNode->value)) {
 				nextNode = guard.extract_after(currNode);
 				++removed;
@@ -825,9 +823,9 @@ private:
 			return;
 		}
 
-		auto beforeFirst	= _data.before_head();
-		auto beforeMid		= other._data.before_head();
-		auto midNode		= other._data.head;
+		_NodePointer beforeFirst	= _data.before_head();
+		_NodePointer beforeMid		= other._data.before_head();
+		_NodePointer midNode		= other._data.head;
 		for (;;) {
 			// Find position in the first range where insertion is needed
 			_NodePointer firstNode{};
@@ -845,7 +843,7 @@ private:
 				beforeFirst = firstNode;
 			}
 			// Find sub-range in the second range to insert into the first range
-			auto currNode = midNode;
+			_NodePointer currNode = midNode;
 			_NodePointer nextNode{};
 			while (true) {
 				nextNode = currNode->next;
@@ -874,7 +872,7 @@ private:
 	template<class Comp>
 	_NodePointer _inplace_merge(_NodePointer beforeFirst, _NodePointer beforeMid, _NodePointer beforeLast, Comp comp) noexcept {
 		// Merge 2 sorted ranges (beforeFirst, beforeMid] and (beforeMid, beforeLast], both are in *this
-		auto midNode = beforeMid->next;
+		_NodePointer midNode = beforeMid->next;
 		for (;;) {
 			// Find position in the first range where insertion is needed
 			_NodePointer firstNode{};
@@ -890,7 +888,7 @@ private:
 				beforeFirst = firstNode;
 			}
 			// Find sub-range in the second range to insert into the first range
-			auto currNode = midNode;
+			_NodePointer currNode = midNode;
 			_NodePointer nextNode{};
 			while (true) {
 				nextNode = currNode->next;
@@ -919,12 +917,12 @@ private:
 	template<class Comp>
 	_NodePointer _sort2(_NodePointer beforeFirst, Comp comp) {
 		// Sort range (beforeFirst, beforeFirst + 2], or until nullptr is encountered
-		const auto firstNode = beforeFirst->next;
+		const _NodePointer firstNode = beforeFirst->next;
 		if (!firstNode) {
 			return beforeFirst;
 		}
 
-		const auto lastNode = firstNode->next;
+		const _NodePointer lastNode = firstNode->next;
 		if (!lastNode || comp(firstNode->value, lastNode->value)) {
 			return firstNode;
 		}
@@ -942,20 +940,21 @@ private:
 			return this->_sort2(beforeFirst, comp);
 		}
 		// Sort top-down half length
-		const auto halfLength	= length / 2;
-		const auto beforeMid	= this->_sort_base(beforeFirst, halfLength, comp);
+		const auto halfLength = length / 2;
+
+		const _NodePointer beforeMid = this->_sort_base(beforeFirst, halfLength, comp);
 		if (!beforeMid->next) {
 			return beforeMid;
 		}
 
-		const auto beforeLast = this->_sort_base(beforeMid, halfLength, comp);
+		const _NodePointer beforeLast = this->_sort_base(beforeMid, halfLength, comp);
 		return this->_inplace_merge(beforeFirst, beforeMid, beforeLast, comp);
 	}
 
 	template<class Comp>
 	void _sort(_NodePointer beforeFirst, Comp comp) noexcept {
 		// Sort whole list bottom-up
-		auto beforeMid = this->_sort2(beforeFirst, comp);
+		_NodePointer beforeMid = this->_sort2(beforeFirst, comp);
 		
 		size_type length = 2;
 		do {
@@ -963,8 +962,8 @@ private:
 				return;
 			}
 
-			const auto beforeLast	= this->_sort_base(beforeMid, length, comp);
-			beforeMid				= this->_inplace_merge(beforeFirst, beforeMid, beforeLast, comp);
+			const _NodePointer beforeLast	= this->_sort_base(beforeMid, length, comp);
+			beforeMid						= this->_inplace_merge(beforeFirst, beforeMid, beforeLast, comp);
 			
 			length <<= 1; // length *= 2
 		}

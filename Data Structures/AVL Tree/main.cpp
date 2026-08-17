@@ -55,23 +55,23 @@ int main() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 
 	AVLTree<int> tree;
-	//for (const auto& val : data) {
-	//	std::cout << "Inserting " << val << "\n";
-	//	tree.emplace(val);
-	//}
+	for (const auto& val : data) {
+		std::cout << "Inserting " << val << "\n";
+		tree.emplace(val);
+	}
 
-	tree.emplace(5);
+	//tree.emplace(5);
 
 	std::cout << tree.min() << " - " << tree.max() << "\n";
 	if (std::next(tree.begin()) == tree.end()) {
-		std::cout << "Impossible\n";
+		std::cout << "Correct\n";
 	}
 	//std::cout << (std::next(tree.begin(), 1) == tree.end()) << "\n";
 
 	std::cout << "Finished\n";
-	//for (auto i = tree.begin(); i != tree.end(); ++i) {
-	//	std::cout << *i << " ";
-	//}
+	for (auto i = tree.begin(); i != tree.end(); ++i) {
+		std::cout << *i << " ";
+	}
 
 	//printer::Printer p;
 	//p.sep(", ").alt("Empty\n");

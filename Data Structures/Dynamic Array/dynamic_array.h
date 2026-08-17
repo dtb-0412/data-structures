@@ -585,9 +585,10 @@ public:
 		// Insert count * val at pos
 		pointer& myLast = _data.last;
 
-		const auto posPtr			= pos.ptr;
-		const auto oldFirst			= _data.first;
-		const auto oldLast			= _data.last;
+		const pointer posPtr	= pos.ptr;
+		const pointer oldFirst	= _data.first;
+		const pointer oldLast	= _data.last;
+
 		const auto offset			= static_cast<size_type>(posPtr - oldFirst);
 		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
 		const bool oneAtBack		= count == 1 && posPtr == oldLast;
@@ -735,7 +736,7 @@ public:
 		// Erase element at pos
 		pointer& myLast = _data.last;
 
-		const auto posPtr = pos.ptr;
+		const pointer posPtr = pos.ptr;
 		memory::move(posPtr + 1, myLast, posPtr);
 		memory::destruct_at(myLast - 1);
 		--myLast;
@@ -748,12 +749,12 @@ public:
 		// Erase range [first, last)
 		pointer& myLast = _data.last;
 		
-		const auto firstPtr = first.ptr;
-		const auto lastPtr	= last.ptr;
+		const pointer firstPtr	= first.ptr;
+		const pointer lastPtr	= last.ptr;
 		if (firstPtr != lastPtr) {
 			const auto [_, out] = memory::move(lastPtr, myLast, firstPtr);
 			
-			const auto newLast = out;
+			const pointer newLast = out;
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
 		}
@@ -950,7 +951,6 @@ private:
 		// Given newSize, calculate geometric growth
 		const auto oldCapacity	= this->capacity();
 		const auto maxSize		= this->max_size();
-
 		if (oldCapacity > maxSize - oldCapacity / 2) {
 			return maxSize; // Geometric growth would overflow
 		}
@@ -1027,9 +1027,10 @@ private:
 		// Insert elements from counted range [first, first + count) at pos
 		pointer& myLast = _data.last;
 		
-		const auto posPtr			= pos.ptr;
-		const auto oldFirst			= _data.first;
-		const auto oldLast			= _data.last;
+		const pointer posPtr	= pos.ptr;
+		const pointer oldFirst	= _data.first;
+		const pointer oldLast	= _data.last;
+
 		const auto offset			= static_cast<size_type>(posPtr - oldFirst);
 		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
 		const bool oneAtBack		= count == 1 && posPtr == oldLast;
@@ -1141,7 +1142,7 @@ private:
 		// Assign unknown number of elements from [first, last)
 		pointer& myLast = _data.last;
 
-		auto current = _data.first;
+		pointer current = _data.first;
 		for (; first != last && current != myLast; ++first, ++current) {
 			*current = *first;
 		}
@@ -1197,7 +1198,7 @@ private:
 			return;
 		}
 		else {
-			const auto newLast = myFirst + newSize;
+			const pointer newLast = myFirst + newSize;
 			memory::copy_n(std::move(first), newSize, myFirst);
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
@@ -1247,7 +1248,7 @@ private:
 
 		const auto oldSize = this->size();
 		if (newSize < oldSize) { // Trim
-			const auto newLast = myFirst + newSize;
+			const pointer newLast = myFirst + newSize;
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
 			return;
@@ -1259,7 +1260,7 @@ private:
 				return;
 			}
 
-			const auto oldLast = myLast;
+			const pointer oldLast = myLast;
 			if constexpr (std::is_same_v<T, T2>) {
 				myLast = memory::uninitialized_fill_n(oldLast, newSize - oldSize, val);
 			}
