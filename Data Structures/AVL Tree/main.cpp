@@ -72,19 +72,23 @@ int main() {
 			std::cout << "Correct\n";
 		}
 
-		//AVLTree<Int, IntCompare> tree2;
-		//tree2.insert(data2.begin(), data2.end());
+		AVLTree<Int, IntCompare> tree2;
+		tree2.insert(data2.begin(), data2.end());
 		//tree2.level_order();
-		//std::cout << "\n\n";
+		std::cout << "\n\n";
 
-		//tree.merge(tree2);
+		tree.merge(tree2);
 
 		printer::Printer printer;
 		printer.sep(", ").alt("Empty\n");
 		printer
-			.prompt("Tree: ")
+			.prompt("Tree1: ")
 			.print_range(tree.begin(), tree.end());
-		tree.level_order();
+
+		printer
+			.prompt("Tree2: ")
+			.print_range(tree2.begin(), tree2.end());
+		//tree.level_order();
 	}
 	return 0;
 }

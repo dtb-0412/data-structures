@@ -42,7 +42,7 @@ public:
 	}
 
 	AVLTreeConstIterator& operator++() noexcept {
-		if (!ptr->right) { // Climb upwards, look for right subtree
+		if (ptr->right->isHead) { // Climb upwards, look for right subtree
 			for (_NodePointer currNode = ptr->parent;;) {
 				// Stop when reaching head or going upwards from a left subtree for the first time
 				if (currNode->isHead || ptr != currNode->right) {
@@ -68,7 +68,7 @@ public:
 		if (ptr->isHead) { // Goes back from end() to the rightmost node
 			ptr = ptr->right;
 		}
-		else if (!ptr->left) {
+		else if (ptr->left->isHead) {
 			for (_NodePointer currNode = ptr->parent;;) {
 				// Stop when reaching head or going upwards from a right subtree for the first time
 				if (currNode->isHead || ptr != currNode->left) {
@@ -163,23 +163,23 @@ struct AVLTreeNode {
 	[[nodiscard]] static node_pointer construct_head() {
 		// Construct empty head sentinel with no value
 		const auto newHead = static_cast<node_pointer>(memory::allocate(1, sizeof(AVLTreeNode)));
-		memory::construct_at(std::addressof(newHead->left), newHead);	// Any value is fine, will be reassigned when new node is inserted
+		memory::construct_at(std::addressof(newHead->left), newHead);
 		memory::construct_at(std::addressof(newHead->right), newHead);
-		memory::construct_at(std::addressof(newHead->parent), newHead);	// Parent must be nullptr, or everything fails!
+		memory::construct_at(std::addressof(newHead->parent), newHead);
 		newHead->height = 0;
 		newHead->isHead = true;
 		return newHead;
 	}
 
 	template<class... Args>
-	[[nodiscard]] static node_pointer construct_node(Args&&... args) {
+	[[nodiscard]] static node_pointer construct_node(node_pointer head, Args&&... args) {
 		// Construct node with value from args
 		memory::NodeAllocateGuard<AVLTreeNode> guard;
 		guard.allocate();
 		memory::construct_at(std::addressof(guard.node->value), std::forward<Args>(args)...);
-		memory::construct_at(std::addressof(guard.node->left));		// Left and right of leaf node must be nullptr
-		memory::construct_at(std::addressof(guard.node->right));
-		memory::construct_at(std::addressof(guard.node->parent), guard.node);	// Any value is fine, will be reassigned during insertion
+		memory::construct_at(std::addressof(guard.node->left), head);
+		memory::construct_at(std::addressof(guard.node->right), head);
+		memory::construct_at(std::addressof(guard.node->parent), head);
 		guard.node->height = 1;
 		guard.node->isHead = false;
 		return guard.release();
@@ -199,10 +199,10 @@ struct AVLTreeNode {
 		free_empty_node(node);
 	}
 
-	void release_child(node_pointer child) noexcept {
-		// Release child, unlink it from *this
-		this->replace_child(child, nullptr);
-	}
+	//void release_child(node_pointer child) noexcept {
+	//	// Release child, unlink it from *this
+	//	this->replace_child(child, head);
+	//}
 
 	void replace_child(node_pointer oldChild, node_pointer newChild) noexcept {
 		// If oldChild and *this are parent and child, replace oldChild with newChild
@@ -243,9 +243,9 @@ struct AVLTempNodeGuard2 {
 
 
 	template<class... Args>
-	explicit AVLTempNodeGuard2(Args&&... args)
+	explicit AVLTempNodeGuard2(node_pointer head, Args&&... args)
 		: ptr() { // Prevent double delete when allocation throws
-		ptr = node_type::construct_node(std::forward<Args>(args)...);
+		ptr = node_type::construct_node(head, std::forward<Args>(args)...);
 	}
 
 	AVLTempNodeGuard2(const AVLTempNodeGuard2&)				= delete;
@@ -310,7 +310,7 @@ public:
 
 	[[nodiscard]] static node_pointer min(node_pointer node)  noexcept {
 		// Get the leftmost node in subtree at node
-		while (node->left) {
+		while (!node->left->isHead) {
 			node = node->left;
 		}
 		return node;
@@ -318,7 +318,7 @@ public:
 
 	[[nodiscard]] static node_pointer max(node_pointer node)  noexcept {
 		// Get the rightmost node in subtree at node
-		while (node->right) {
+		while (!node->right->isHead) {
 			node = node->right;
 		}
 		return node;
@@ -326,12 +326,12 @@ public:
 
 	[[nodiscard]] static height_type get_height(node_pointer node) noexcept {
 		// Get node height
-		return static_cast<height_type>(node ? node->height : 0);
+		return static_cast<height_type>(node->height);
 	}
 
 	[[nodiscard]] static balance_type get_balance_factor(node_pointer node) noexcept {
 		// Get balance factor at node
-		if (node) {
+		if (!node->isHead) {
 			const auto leftHeight	= AVLTreeValue::get_height(node->left);
 			const auto rightHeight	= AVLTreeValue::get_height(node->right);
 			return static_cast<balance_type>(rightHeight - leftHeight);
@@ -339,8 +339,13 @@ public:
 		return 0;
 	}
 
-	static void update_height(const node_pointer node) noexcept {
+	static void update_height(node_pointer node) noexcept {
 		// Update node height
+		if (node->isHead) {
+			std::cout << "Error here: ";
+			std::cout << node->left->value << " - " << node->right->value << "\n";
+			return;
+		}
 		const auto leftHeight	= AVLTreeValue::get_height(node->left);
 		const auto rightHeight	= AVLTreeValue::get_height(node->right);
 		node->height = static_cast<height_type>(std::max(leftHeight, rightHeight) + 1);
@@ -358,7 +363,7 @@ public:
 		oldRoot->right	= child;
 		newRoot->left	= oldRoot;
 
-		if (child) { // Reattach newRoot's left child to oldRoot
+		if (!child->isHead) { // Reattach newRoot's left child to oldRoot
 			child->parent = oldRoot;
 		}
 
@@ -378,7 +383,7 @@ public:
 		oldRoot->left	= child;
 		newRoot->right	= oldRoot;
 
-		if (child) { // Reattach newRoot's right child to oldRoot
+		if (!child->isHead) { // Reattach newRoot's right child to oldRoot
 			child->parent = oldRoot;
 		}
 
@@ -423,7 +428,6 @@ public:
 
 		for (;;) {
 			if (node->isHead) { // Reach head before rebalancing
-				std::cout << "[1]\n";
 				return;
 			}
 
@@ -437,7 +441,6 @@ public:
 		for (;;) { // Update the remaining nodes height
 			node = node->parent;
 			if (node->isHead) {
-				std::cout << "[2]\n";
 				return;
 			}
 
@@ -478,50 +481,50 @@ public:
 		// Extract node pointed by pos
 		--size;
 		const node_pointer extracted	= pos.ptr; // UB: pos == AVLTree::end()
-		const node_pointer nextNode		= std::next(pos, 1).ptr;
+		const node_pointer nextNode		= std::ranges::next(pos).ptr;
 		if (size == 0) { // Extract final node
-			head->left	= nullptr;
-			head->right = nullptr;
+			head->left	= head;
+			head->right = head;
 		}
 		else if (extracted == head->left) { // Extract leftmost node
 			head->left = nextNode;
 		}
 		else if (extracted == head->right) { // Extract rightmost node
-			head->right = std::prev(pos, 1).ptr;
+			head->right = std::ranges::prev(pos).ptr;
 		}
 
 		node_pointer parent = extracted->parent;
-		if (extracted->left && extracted->right) { // Node has both children
+		if (!(extracted->left->isHead || extracted->right->isHead)) { // Node has both children
 			const node_pointer successor = this->min(extracted->right);
-			successor->parent->release_child(successor);
+			successor->parent->replace_child(successor, head);
 			extracted->parent->replace_child(extracted, successor);
 
-			if (extracted->left) { // Adopt extracted's left child
+			if (!extracted->left->isHead) { // Adopt extracted's left child
 				extracted->left->parent = successor;
-				successor->left = std::exchange(extracted->left, nullptr);
+				successor->left = std::exchange(extracted->left, head);
 			}
 
-			if (extracted->right) { // Adopt extracted's right child
+			if (!extracted->right->isHead) { // Adopt extracted's right child
 				extracted->right->parent = successor;
-				successor->right = std::exchange(extracted->right, nullptr);
+				successor->right = std::exchange(extracted->right, head);
 			}
 			extracted->parent = successor; // Fix tree starting point
 		}
-		else if (!extracted->left && !extracted->right) { // Extract leaf node
-			parent->release_child(extracted);
+		else if (extracted->left->isHead && extracted->right->isHead) { // Extract leaf node
+			parent->replace_child(extracted, head);
 		}
 		else { // Node has a single child
-			const node_pointer childNode = std::exchange((extracted->left) ? extracted->left : extracted->right, nullptr);
+			const node_pointer childNode = std::exchange((extracted->left->isHead) ? extracted->right : extracted->left, head);
 			parent->replace_child(extracted, childNode);
 		}
 
-		this->fix_tree(std::exchange(extracted->parent, nullptr), extracted);
+		this->fix_tree(std::exchange(extracted->parent, head), extracted);
 		return std::make_pair(extracted, nextNode);
 	}
 
 	void clear_subtree(node_pointer node) noexcept {
 		// Clear entire subtree at node recursively
-		while (node) {
+		while (!node->isHead) {
 			this->clear_subtree(node->right);
 			const node_pointer nextNode = node->left;
 			node_type::free_node(node);
@@ -594,9 +597,9 @@ private:
 			: base() {
 			base.allocate();
 			memory::construct_at(std::addressof(base.node->value), std::forward<Args>(args)...);
-			memory::construct_at(std::addressof(base.node->left));
-			memory::construct_at(std::addressof(base.node->right));
-			memory::construct_at(std::addressof(base.node->parent), base.node);
+			memory::construct_at(std::addressof(base.node->left), head);
+			memory::construct_at(std::addressof(base.node->right), head);
+			memory::construct_at(std::addressof(base.node->parent), head);
 			base.node->height = 1;
 			base.node->isHead = false;
 		}
@@ -697,7 +700,7 @@ public:
 	}
 
 	[[nodiscard]] const_reference min() const noexcept {
-		return _data.head->left->value; // UB
+		return _data.head->left->value;
 	}
 
 	[[nodiscard]] reference max() noexcept {
@@ -705,7 +708,7 @@ public:
 	}
 
 	[[nodiscard]] const_reference max() const noexcept {
-		return _data.head->right->value; // UB
+		return _data.head->right->value;
 	}
 
 	[[nodiscard]] size_type size() const noexcept {
@@ -755,7 +758,7 @@ public:
 
 	template<std::input_iterator It>
 		requires std::sentinel_for<It, It>
-	void insert(It first, const It last) {
+	void insert(It first, It last) {
 		// Insert range [first, last)
 		for (; first != last; ++first) {
 			this->_emplace_hint(_data.head, *first);
@@ -814,7 +817,7 @@ public:
 		_data.clear_subtree(_data.head->parent);
 		_data.head->left	= _data.head;
 		_data.head->right	= _data.head;
-		_data.head->parent	= nullptr;
+		_data.head->parent	= _data.head;
 		_data.size = 0;
 	}
 
@@ -979,8 +982,8 @@ public:
 			this->_check_max_size();
 			// Extract from other and reset links
 			const auto extracted = other._data.extract(const_iterator(currNode)).first;
-			extracted->left = nullptr;
-			extracted->right = nullptr;
+			extracted->left = _data.head;
+			extracted->right = _data.head;
 			// Insert back into *this
 			_data.insert(result.location, extracted); // Handle extracted->parent and extracted->height
 		}
@@ -1090,12 +1093,12 @@ public:
 private:
 	_NodePointer _copy_node(value_type& val) {
 		// Construct node by copying val
-		return _NodeType::construct_node(val);
+		return _NodeType::construct_node(_data.head, val);
 	}
 
 	_NodePointer _copy_subtree(_NodePointer oldRoot, _NodePointer newHead) {
 		// Copy subtree at oldRoot into newHead recursively
-		if (oldRoot == nullptr) {
+		if (oldRoot->isHead) {
 			return nullptr;  // Return nullptr for empty subtree
 		}
 
@@ -1113,7 +1116,7 @@ private:
 		_data.head->parent = this->_copy_subtree(other._data.head->parent, _data.head);
 		_data.size = other._data.size;
 		// Update leftmost and rightmost nodes
-		if (_data.head->parent == nullptr) { // Empty tree
+		if (_data.head->parent->isHead) { // Empty tree
 			_data.head->left = _data.head;
 			_data.head->right = _data.head;
 		}
@@ -1192,26 +1195,30 @@ private:
 			}
 		}
 		else if (hintNode->isHead) { // Insert at end as rightmost node
-			if (!head->parent || _comp(head->right->value, key)) {
+			if (head->parent->isHead || _comp(head->right->value, key)) {
 				return { { head->right, NodeChild::RIGHT }, false };
 			}
 		}
 		else if (_comp(key, hintNode->value)) { // key < *hintNode
-			const _NodePointer prevNode = std::prev(const_iterator(hintNode), 1).ptr;
+			const _NodePointer prevNode = (--const_iterator(hintNode)).ptr;
 			if (_comp(prevNode->value, key)) { // *(--hintNode) < key < *hintNode, insert here
-				if (!prevNode->right) {
+				if (prevNode->right->isHead) {
 					return { { prevNode, NodeChild::RIGHT }, false };
 				}
-				return { { hintNode, NodeChild::LEFT }, false };
+				else {
+					return { { hintNode, NodeChild::LEFT }, false };
+				}
 			}
 		}
 		else if (_comp(hintNode->value, key)) { // key > *hintNode
-			const _NodePointer nextNode = std::next(const_iterator(hintNode), 1).ptr;
+			const _NodePointer nextNode = (++const_iterator(hintNode)).ptr;
 			if (nextNode->isHead || _comp(key, nextNode->value)) { // *hintNode < key < *(++hintNode), insert here
-				if (!hintNode->right) {
+				if (hintNode->right->isHead) {
 					return { { hintNode, NodeChild::RIGHT }, false };
 				}
-				return { { nextNode, NodeChild::LEFT }, false };
+				else {
+					return { { nextNode, NodeChild::LEFT }, false };
+				}
 			}
 		}
 		else { // Duplicate value, don't insert
