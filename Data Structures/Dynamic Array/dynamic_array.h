@@ -98,6 +98,7 @@ public:
 		return ptr <=> other.ptr;
 	}
 
+public:
 	_Pointer ptr;
 };
 
@@ -199,19 +200,24 @@ public:
 	constexpr DynamicArrValue(pointer first, pointer last, pointer end) noexcept
 		: first(first), last(last), end(end) {}
 
+	constexpr void clear() noexcept {
+		// Erase all elements
+		if (first) {
+			memory::destruct(first, last);
+			memory::deallocate(first, static_cast<size_type>(end - first) * sizeof(value_type));
+
+			first	= nullptr;
+			last	= nullptr;
+			end		= nullptr;
+		}
+	}
+
 	constexpr void swap(DynamicArrValue& other) noexcept {
-		// Swap contents with other (ADL)
-		using std::swap;
+		// Swap contents with other
+		using std::swap; // Intentional ADL
 		swap(first, other.first);
 		swap(last, other.last);
 		swap(end, other.end);
-	}
-
-	constexpr void take_ownership(DynamicArrValue& other) noexcept {
-		// Take ownership of other's contents, leaving other empty
-		first	= std::exchange(other.first, nullptr);
-		last	= std::exchange(other.last, nullptr);
-		end		= std::exchange(other.end, nullptr);
 	}
 
 public:
@@ -222,34 +228,6 @@ public:
 
 struct ValueInitializeTag {
 	explicit ValueInitializeTag() = default;
-};
-
-template<class T>
-struct [[nodiscard]] TempObjectGuard {
-	template<class... Args>
-	constexpr explicit TempObjectGuard(Args&&... args) {
-		memory::construct_at(std::addressof(object), std::forward<Args>(args)...);
-	}
-
-	TempObjectGuard(const TempObjectGuard&)				= delete;
-	TempObjectGuard& operator=(const TempObjectGuard&)	= delete;
-
-	constexpr ~TempObjectGuard() noexcept {
-		memory::destruct_at(std::addressof(object));
-	}
-
-	[[nodiscard]] constexpr T& getObject() noexcept {
-		return object;
-	}
-
-	[[nodiscard]] constexpr const T& getObject() const noexcept {
-		return object;
-	}
-
-	// Use union to manually manage object's construction and destruction, especially with allocator.
-	union {
-		T object;
-	};
 };
 
 template<class T>
@@ -266,34 +244,36 @@ public:
 private:
 	using _DynamicArrValue = DynamicArrValue<value_type, size_type, difference_type, pointer, const_pointer>;
 
-	struct [[nodiscard]] ConstructGuard {
-		// Guard for construction failure
-		constexpr ~ConstructGuard() noexcept {
-			if (target) {
-				target->_tidy();
+	struct ArrayConstructGuard {
+		// Guard for array construction failure
+		ArrayConstructGuard(_DynamicArrValue& data)
+			: data(std::addressof(data)) {}
+
+		ArrayConstructGuard(const ArrayConstructGuard&)				= delete;
+		ArrayConstructGuard& operator=(const ArrayConstructGuard&)	= delete;
+
+		constexpr ~ArrayConstructGuard() noexcept {
+			if (data) {
+				data->clear();
 			}
 		}
 
 		constexpr void release() noexcept {
-			target = nullptr;
+			data = nullptr;
 		}
 
-		DynamicArray* target;
+		_DynamicArrValue* data;
 	};
 
-	struct [[nodiscard]] ReallocateGuard {
-		// Guard for reallocation failure
-		constexpr ReallocateGuard(size_type newCapacity, pointer newFirst) noexcept
-			: newCapacity(newCapacity), newFirst(newFirst) {
-		}
+	struct ArrayReallocateGuard {
+		// Guard for array reallocation failure
+		ArrayReallocateGuard(const size_type newCapacity, pointer newFirst)
+			: newCapacity(newCapacity), newFirst(newFirst) {}
 
-		ReallocateGuard(const ReallocateGuard&)	= delete;
-		ReallocateGuard(ReallocateGuard&&)		= delete;
+		ArrayReallocateGuard(const ArrayReallocateGuard&)				= delete;
+		ArrayReallocateGuard& operator=(const ArrayReallocateGuard&)	= delete;
 
-		ReallocateGuard& operator=(const ReallocateGuard&)	= delete;
-		ReallocateGuard& operator=(ReallocateGuard&&)		= delete;
-
-		constexpr ~ReallocateGuard() noexcept {
+		constexpr ~ArrayReallocateGuard() noexcept {
 			if (newFirst) {
 				memory::deallocate(newFirst, newCapacity * sizeof(T));
 			}
@@ -303,17 +283,17 @@ private:
 			newFirst = nullptr;
 		}
 
-		size_type newCapacity;	// Capacity of the new array
-		pointer newFirst;		// Points to the new array
+		size_type	newCapacity;	// Capacity of the new array
+		pointer		newFirst;		// Points to the new array
 	};
 
-	struct [[nodiscard]] ArrayTransferGuard : public ReallocateGuard {
+	struct ArrayTransferGuard {
 		// Guard for array transfer failure when inserting or resizing
-		using _Base = ReallocateGuard;
+		ArrayTransferGuard(const size_type newCapacity, pointer newFirst, pointer constructedFirst, pointer constructedLast)
+			: base(newCapacity, newFirst), constructedFirst(constructedFirst), constructedLast(constructedLast) {}
 
-		constexpr ArrayTransferGuard(size_type newCapacity, pointer newFirst, pointer constructedFirst, pointer constructedLast) noexcept
-			: _Base(newCapacity, newFirst), constructedFirst(constructedFirst), constructedLast(constructedLast) {
-		}
+		ArrayTransferGuard(const ArrayTransferGuard&)				= delete;
+		ArrayTransferGuard& operator=(const ArrayTransferGuard&)	= delete;
 
 		constexpr ~ArrayTransferGuard() noexcept {
 			if (constructedFirst) {
@@ -324,32 +304,36 @@ private:
 		constexpr void release() noexcept {
 			constructedFirst	= nullptr;
 			constructedLast		= nullptr;
-			_Base::release();
+			base.release();
 		}
 
+		ArrayReallocateGuard base;
 		pointer constructedFirst;	// Start of the constructed range
 		pointer constructedLast;	// One-past-end of the constructed range
 	};
 
-	struct [[nodiscard]] VaporizeGuard {
+	struct ArrayVaporizeGuard {
 		// Guard for double failure when inserting range of elements
-		VaporizeGuard& operator=(const VaporizeGuard&)	= delete;
-		VaporizeGuard& operator=(VaporizeGuard&&)		= delete;
+		ArrayVaporizeGuard(_DynamicArrValue& data, pointer vaporizedFirst, pointer destructedFirst)
+			: data(std::addressof(data)), vaporizedFirst(vaporizedFirst), destructedFirst(destructedFirst) {}
 
-		constexpr ~VaporizeGuard() noexcept {
-			if (target) {
-				pointer& myLast = target->_data.last;
+		ArrayVaporizeGuard(const ArrayVaporizeGuard&)				= delete;
+		ArrayVaporizeGuard& operator=(const ArrayVaporizeGuard&)	= delete;
 
-				memory::destruct(destructedFirst, myLast);
-				myLast = vaporizedFirst;
+		constexpr ~ArrayVaporizeGuard() noexcept {
+			if (data) {
+				memory::destruct(destructedFirst, data->last);
+				data->last = vaporizedFirst;
 			}
 		}
 
 		constexpr void release() noexcept {
-			target = nullptr;
+			data			= nullptr;
+			vaporizedFirst	= nullptr;
+			destructedFirst = nullptr;
 		}
 
-		DynamicArray* target;
+		_DynamicArrValue* data;
 		pointer vaporizedFirst;		// First element to be vaporized
 		pointer destructedFirst;	// First element to be destructed
 	};
@@ -375,8 +359,8 @@ public:
 		this->_construct_n(count, val);
 	}
 
-	template<class It,
-		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
 	constexpr DynamicArray(It first, It last)
 		: _data() {
 		if constexpr (std::forward_iterator<It>) {
@@ -384,7 +368,7 @@ public:
 			this->_construct_n(count, std::move(first), std::move(last));
 		}
 		else {
-			ConstructGuard guard{ this };
+			ArrayConstructGuard guard(_data);
 			this->_append_uncounted_range(std::move(first), std::move(last));
 			guard.release();
 		}
@@ -401,12 +385,12 @@ public:
 	}
 
 	constexpr DynamicArray(DynamicArray&& other) noexcept
-		: _data(std::exchange(other._data.first, nullptr),
-				std::exchange(other._data.last, nullptr),
-				std::exchange(other._data.end, nullptr)) {}
+		: _data() {
+		_data.swap(other.data);
+	}
 
 	constexpr ~DynamicArray() noexcept {
-		this->_tidy();
+		_data.clear();
 	}
 
 	constexpr DynamicArray& operator=(const DynamicArray& other) {
@@ -418,8 +402,8 @@ public:
 
 	constexpr DynamicArray& operator=(DynamicArray&& other) {
 		if (this != std::addressof(other)) {
-			this->_tidy();
-			_data.take_ownership(other._data);
+			_data.clear();
+			_data.swap(other._data);
 		}
 		return *this;
 	}
@@ -483,16 +467,16 @@ public:
 		return const_iterator(_data.first);
 	}
 
-	[[nodiscard]] constexpr const_iterator cbegin() const noexcept {
-		return this->begin();
-	}
-
 	[[nodiscard]] constexpr iterator end() noexcept {
 		return iterator(_data.last);
 	}
 
 	[[nodiscard]] constexpr const_iterator end() const noexcept {
 		return const_iterator(_data.last);
+	}
+
+	[[nodiscard]] constexpr const_iterator cbegin() const noexcept {
+		return this->begin();
 	}
 
 	[[nodiscard]] constexpr const_iterator cend() const noexcept {
@@ -507,16 +491,16 @@ public:
 		return const_reverse_iterator(end());
 	}
 
-	[[nodiscard]] constexpr const_reverse_iterator crbegin() const noexcept {
-		return this->rbegin();
-	}
-
 	[[nodiscard]] constexpr reverse_iterator rend() noexcept {
 		return reverse_iterator(begin());
 	}
 
 	[[nodiscard]] constexpr const_reverse_iterator rend() const noexcept {
 		return const_reverse_iterator(begin());
+	}
+
+	[[nodiscard]] constexpr const_reverse_iterator crbegin() const noexcept {
+		return this->rbegin();
 	}
 
 	[[nodiscard]] constexpr const_reverse_iterator crend() const noexcept {
@@ -573,14 +557,14 @@ public:
 				E.g. arr.emplace(arr.begin() + 2, arr[4]);
 												  -------
 				*/
-				TempObjectGuard<T> guard(std::forward<Args>(args)...);
+				memory::TempObjectGuard<T> guard(std::forward<Args>(args)...);
 				// Shift the last element to the right by 1 offset, potentially uninitialized memory
 				memory::construct_at(oldLast, std::move(oldLast[-1]));
 				++_data.last;
 				// Shift range [posPtr, oldLast - 1) to the right by 1 offset (shift backward to avoid overlap)
 				memory::move_backward(posPtr, oldLast - 1, oldLast);
 				// Insert new element at pos
-				*posPtr = std::move(guard.getObject());
+				*posPtr = std::move(guard.get_object());
 			}
 			return iterator(posPtr);
 		}
@@ -601,10 +585,9 @@ public:
 		// Insert count * val at pos
 		pointer& myLast = _data.last;
 
-		const pointer posPtr	= pos.ptr;
-		const pointer oldFirst	= _data.first;
-		const pointer oldLast	= _data.last;
-
+		const auto posPtr			= pos.ptr;
+		const auto oldFirst			= _data.first;
+		const auto oldLast			= _data.last;
 		const auto offset			= static_cast<size_type>(posPtr - oldFirst);
 		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
 		const bool oneAtBack		= count == 1 && posPtr == oldLast;
@@ -619,7 +602,7 @@ public:
 			const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
 			const auto constructedLast	= newFirst + offset + count;
 
-			ArrayTransferGuard guard{ newCapacity, newFirst, constructedLast, constructedLast };
+			ArrayTransferGuard guard(newCapacity, newFirst, constructedLast, constructedLast);
 
 			memory::uninitialized_fill_n(newFirst + offset, count, val);
 			guard.constructedFirst = newFirst + offset;
@@ -649,8 +632,8 @@ public:
 		}
 		else {
 			// Handle aliasing with temporary object guard
-			const TempObjectGuard<T> guard{ val };
-			const auto& object = guard.getObject();
+			const memory::TempObjectGuard<T> guard(val);
+			const auto& object = guard.get_object();
 
 			const auto affected = static_cast<size_type>(oldLast - posPtr);
 			if (count > affected) {
@@ -675,8 +658,8 @@ public:
 		return iterator(_data.first + offset); // Initial posPtr is invalidated
 	}
 
-	template<class It,
-		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
 	constexpr iterator insert(const_iterator pos, It first, It last) {
 		// Insert range [first, last) at pos
 		const auto offset = static_cast<size_type>(pos.ptr - _data.first);
@@ -721,8 +704,8 @@ public:
 		}
 	}
 
-	template<class It,
-		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
 	constexpr void assign(It first, It last) {
 		// Assign range [first, last)
 		if constexpr (std::forward_iterator<It>) {
@@ -752,7 +735,7 @@ public:
 		// Erase element at pos
 		pointer& myLast = _data.last;
 
-		const pointer posPtr = pos.ptr;
+		const auto posPtr = pos.ptr;
 		memory::move(posPtr + 1, myLast, posPtr);
 		memory::destruct_at(myLast - 1);
 		--myLast;
@@ -765,12 +748,12 @@ public:
 		// Erase range [first, last)
 		pointer& myLast = _data.last;
 		
-		const pointer firstPtr = first.ptr;
-		const pointer lastPtr = last.ptr;
+		const auto firstPtr = first.ptr;
+		const auto lastPtr	= last.ptr;
 		if (firstPtr != lastPtr) {
 			const auto [_, out] = memory::move(lastPtr, myLast, firstPtr);
 			
-			const pointer newLast = out;
+			const auto newLast = out;
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
 		}
@@ -802,11 +785,11 @@ public:
 		// Shrink capacity to size, provide strong guarantee
 		if (_data.last != _data.end) {
 			if (this->is_empty()) {
-				this->_tidy();
-				return;
+				_data.clear();
 			}
-			
-			this->_reallocate(this->size());
+			else {
+				this->_reallocate(this->size());
+			}
 		}
 	}
 
@@ -821,6 +804,7 @@ public:
 	}
 
 	constexpr void swap(DynamicArray& other) noexcept {
+		// Swap with other
 		if (this != std::addressof(other)) {
 			_data.swap(other._data);
 		}
@@ -857,7 +841,7 @@ private:
 
 		this->_allocate(count);
 
-		ConstructGuard guard{ this };
+		ArrayConstructGuard guard(_data);
 		if constexpr (sizeof...(Args) == 0) {
 			myLast = memory::uninitialized_default_construct_n(myFirst, count);
 		}
@@ -890,22 +874,6 @@ private:
 		myEnd	= newFirst + newCapacity;
 	}
 
-	constexpr void _tidy() noexcept {
-		// Clear all elements and deallocate
-		pointer& myFirst	= _data.first;
-		pointer& myLast		= _data.last;
-		pointer& myEnd		= _data.end;
-
-		if (myFirst) {
-			memory::destruct(myFirst, myLast);
-			memory::deallocate(myFirst, this->capacity() * sizeof(T));
-			
-			myFirst = nullptr;
-			myLast	= nullptr;
-			myEnd	= nullptr;
-		}
-	}
-
 	template<class... Args>
 	constexpr T& _emplace_back_with_unused_capacity(Args&&... args) {
 		// Insert by perfectly forwarding into element at end
@@ -935,7 +903,7 @@ private:
 		const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
 		const auto constructedLast	= newFirst + offset + 1;
 
-		ArrayTransferGuard guard{ newCapacity, newFirst, constructedLast, constructedLast };
+		ArrayTransferGuard guard(newCapacity, newFirst, constructedLast, constructedLast);
 
 		memory::construct_at(newFirst + offset, std::forward<Args>(args)...);
 		guard.constructedFirst = newFirst + offset;
@@ -1002,7 +970,7 @@ private:
 		const auto size		= this->size();
 		const auto newFirst = static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
 
-		ReallocateGuard guard{ newCapacity, newFirst };
+		ArrayReallocateGuard guard(newCapacity, newFirst);
 		if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
 			memory::uninitialized_move(myFirst, myLast, newFirst, newFirst + size);
 		}
@@ -1059,10 +1027,9 @@ private:
 		// Insert elements from counted range [first, first + count) at pos
 		pointer& myLast = _data.last;
 		
-		const pointer posPtr	= pos.ptr;
-		const pointer oldFirst	= _data.first;
-		const pointer oldLast	= _data.last;
-
+		const auto posPtr			= pos.ptr;
+		const auto oldFirst			= _data.first;
+		const auto oldLast			= _data.last;
 		const auto offset			= static_cast<size_type>(posPtr - oldFirst);
 		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
 		const bool oneAtBack		= count == 1 && posPtr == oldLast;
@@ -1077,7 +1044,7 @@ private:
 			const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
 			const auto constructedLast	= newFirst + offset + count;
 
-			ArrayTransferGuard guard{ newCapacity, newFirst, constructedLast, constructedLast };
+			ArrayTransferGuard guard(newCapacity, newFirst, constructedLast, constructedLast);
 
 			memory::uninitialized_copy_n(std::move(first), count, newFirst + offset, newFirst + offset + count);
 			guard.constructedFirst = newFirst + offset;
@@ -1133,7 +1100,7 @@ private:
 					*/
 
 					// Shift the affected range back into [posPtr, oldLast), uninitialized memory
-					VaporizeGuard guard{ this, posPtr, posPtr + count };
+					ArrayVaporizeGuard guard(_data, posPtr, posPtr + count);
 					memory::uninitialized_move(posPtr + count, myLast, posPtr, oldLast);
 					guard.release();
 					// Turn range [oldLast, oldLast + count) back into raw memory
@@ -1155,7 +1122,7 @@ private:
 				}
 				catch (...) {
 					// Shift the first count elements of the affected range back into [posPtr, posPtr + count)
-					VaporizeGuard guard{ this, posPtr, posPtr + count };
+					ArrayVaporizeGuard guard(_data, posPtr, posPtr + count);
 					memory::uninitialized_move(posPtr + count, posPtr + 2 * count, posPtr, posPtr + count);
 					guard.release();
 					// Shift the remaining elements back into [posPtr + count, oldLast)
@@ -1174,7 +1141,7 @@ private:
 		// Assign unknown number of elements from [first, last)
 		pointer& myLast = _data.last;
 
-		pointer current = _data.first;
+		auto current = _data.first;
 		for (; first != last && current != myLast; ++first, ++current) {
 			*current = *first;
 		}
@@ -1230,7 +1197,7 @@ private:
 			return;
 		}
 		else {
-			const pointer newLast = myFirst + newSize;
+			const auto newLast = myFirst + newSize;
 			memory::copy_n(std::move(first), newSize, myFirst);
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
@@ -1252,7 +1219,7 @@ private:
 		const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
 		const auto appendedFirst	= newFirst + oldSize;
 
-		ArrayTransferGuard guard{ newCapacity, newFirst, appendedFirst, appendedFirst };
+		ArrayTransferGuard guard(newCapacity, newFirst, appendedFirst, appendedFirst);
 
 		if constexpr (std::is_same_v<T, T2>) {
 			guard.constructedLast = memory::uninitialized_fill_n(appendedFirst, newSize - oldSize, val);
@@ -1280,7 +1247,7 @@ private:
 
 		const auto oldSize = this->size();
 		if (newSize < oldSize) { // Trim
-			const pointer newLast = myFirst + newSize;
+			const auto newLast = myFirst + newSize;
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
 			return;
@@ -1292,7 +1259,7 @@ private:
 				return;
 			}
 
-			const pointer oldLast = myLast;
+			const auto oldLast = myLast;
 			if constexpr (std::is_same_v<T, T2>) {
 				myLast = memory::uninitialized_fill_n(oldLast, newSize - oldSize, val);
 			}

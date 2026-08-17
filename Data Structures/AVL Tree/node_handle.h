@@ -7,20 +7,20 @@
 #include"memory.hpp"
 #include"utility.hpp"
 
-template<class Iter, class NodeT>
+template<class It, class NodeT>
 struct InsertReturnType {
-	Iter position;	// Inserted node iterator if inserted, otherwise the duplicate node iterator
-	bool inserted;	// Whether insertion took place
-	NodeT node;		// Node handle: Empty if inserted, otherwise contains the node that was not inserted
+	It		position;	// Inserted node iterator if inserted, otherwise the duplicate node iterator
+	bool	inserted;	// Whether insertion took place
+	NodeT	node;		// Node handle: Empty if inserted, otherwise contains the node that was not inserted
 };
 
 template<class DerivedT, class ValueT>
 struct NodeHandleSetBase {
-	using ValueType = ValueT;
+	using value_type = ValueT;
 
-	ValueType& value() const noexcept {
+	value_type& value() const noexcept {
 		const auto& self = static_cast<const DerivedT&>(*this);
-		return self.getPointer()->value;
+		return self.get_pointer()->value;
 	}
 };
 
@@ -28,9 +28,9 @@ template<class NodeT, template<class...> class Base, class... Types> // CRTP
 class NodeHandle : public Base<NodeHandle<NodeT, Base, Types...>, Types...> {
 	// Storage for a node from one of the node-based standard containers
 private:
-	using NodePointer = NodeT*;
+	using _NodePointer = typename NodeT::node_pointer;
 	
-	NodeHandle(const NodePointer ptr) noexcept
+	NodeHandle(_NodePointer ptr) noexcept
 		: _ptr(ptr) {}
 
 public:
@@ -38,19 +38,19 @@ public:
 	friend class AVLTree;
 
 	NodeHandle() noexcept
-		: _ptr(nullptr) {}
+		: _ptr() {}
 
 	NodeHandle(const NodeHandle&)				= delete;
 	NodeHandle& operator=(const NodeHandle&)	= delete;
 
 	NodeHandle(NodeHandle&& other) noexcept
-		: _ptr(std::exchange(other._ptr, nullptr)) {}
+		: _ptr(other._release()) {}
 
 	NodeHandle& operator=(NodeHandle&& other) noexcept {
 		// Always clear node handle, even when self-moving
 		this->_clear();
 		if (other._ptr && this != std::addressof(other)) { // Take ownership
-			_ptr = std::exchange(other._ptr, nullptr);
+			_ptr = other._release();
 		}
 		return *this;
 	}
@@ -63,40 +63,39 @@ public:
 		return _ptr != nullptr;
 	}
 
-	NodePointer getPointer() const noexcept {
+	_NodePointer get_pointer() const noexcept {
 		return _ptr;
 	}
 
-	[[nodiscard]] bool isEmpty() const noexcept {
+	[[nodiscard]] bool is_empty() const noexcept {
 		return _ptr == nullptr;
 	}
 
-	void swap(NodeHandle& Other) noexcept {
+	void swap(NodeHandle& other) noexcept {
 		using std::swap;
-		swap(_ptr, Other._ptr); // ADL
+		swap(_ptr, other._ptr);
 	}
 
-	friend void swap(NodeHandle& Left, NodeHandle& Right) noexcept {
-		Left.swap(Right);
+	friend void swap(NodeHandle& lhs, NodeHandle& rhs) noexcept {
+		lhs.swap(rhs);
 	}
 
-	static NodeHandle make(NodePointer ptr) {
-		ASSERT(ptr != nullptr, "Cannot make empty node handle");
+	static NodeHandle make(_NodePointer ptr) {
 		return NodeHandle(ptr);
 	}
 
 private:
 	void _clear() noexcept {
 		if (_ptr) {
-			NodeT::freeNode(std::exchange(_ptr, nullptr));
+			NodeT::free_node(this->_release());
 		}
 	}
 
-	NodePointer _release() noexcept {
+	_NodePointer _release() noexcept {
 		return std::exchange(_ptr, nullptr);
 	}
 
 private:
-	NodePointer _ptr;
+	_NodePointer _ptr;
 };
 #endif // NODE_HANDLE_H

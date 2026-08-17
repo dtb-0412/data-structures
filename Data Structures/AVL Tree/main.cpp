@@ -1,11 +1,8 @@
+#include<forward_list>
 #include<set>
 #include<vector>
-#include<algorithm>
 
 #include"avl_tree.h"
-
-#include"input.hpp"
-#include"utility.hpp"
 #include"printer.hpp"
 
 using namespace std;
@@ -58,9 +55,27 @@ int main() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 
 	AVLTree<int> tree;
-	for (const auto& val : data) {
-		tree.emplace(val);
+	//for (const auto& val : data) {
+	//	std::cout << "Inserting " << val << "\n";
+	//	tree.emplace(val);
+	//}
+
+	tree.emplace(5);
+
+	std::cout << tree.min() << " - " << tree.max() << "\n";
+	if (std::next(tree.begin()) == tree.end()) {
+		std::cout << "Impossible\n";
 	}
+	//std::cout << (std::next(tree.begin(), 1) == tree.end()) << "\n";
+
+	std::cout << "Finished\n";
+	//for (auto i = tree.begin(); i != tree.end(); ++i) {
+	//	std::cout << *i << " ";
+	//}
+
+	//printer::Printer p;
+	//p.sep(", ").alt("Empty\n");
+	//p.print_range(tree.begin(), tree.end());
 
 	//tree.print(TreeOrder::LEVEL_ORDER);
 	//std::ranges::move(data.begin(), data.begin() + 1, data.end() + 2);

@@ -125,6 +125,7 @@ public:
 	using reference			= value_type&;
 	using const_reference	= const value_type&;
 
+public:
 	ForwardListValue() noexcept
 		: head() {}
 
@@ -144,6 +145,20 @@ public:
 			reinterpret_cast<node_type&>(					// Step 2: Reinterpret cast head from a node_pointer to a node_type&.
 			const_cast<node_pointer&>(head)					// Step 1: Const cast head to allow modification.
 		)));
+	}
+
+	void clear() noexcept {
+		auto currNode = std::exchange(head, nullptr);
+		auto nextNode = node_pointer{};
+		for (; currNode; currNode = nextNode) {
+			nextNode = currNode->next;
+			node_type::free_node(currNode);
+		}
+	}
+
+	void swap(ForwardListValue& other) noexcept {
+		using std::swap;
+		swap(head, other.head);
 	}
 
 	node_pointer head;
@@ -166,45 +181,15 @@ private:
 
 	using _FwdListValue	= ForwardListValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
 
-	struct NodeConstructGuard {
-		// Guard for node construct failure
-		NodeConstructGuard()
-			: node() {}
-
-		NodeConstructGuard(const NodeConstructGuard&)				= delete;
-		NodeConstructGuard& operator=(const NodeConstructGuard&)	= delete;
-
-		~NodeConstructGuard() noexcept {
-			if (node) {
-				memory::deallocate(node, sizeof(_NodeType));
-			}
-		}
-
-		void allocate() {
-			/*
-			Disengage from previous node first, then allocate new memory block.
-			If allocation fails, there won't be a double free.
-			*/
-			node = nullptr;
-			node = static_cast<_NodePointer>(memory::allocate(1, sizeof(_NodeType)));
-		}
-
-		_NodePointer release() noexcept {
-			return std::exchange(node, nullptr);
-		}
-
-		_NodePointer node;
-	};
-
-	struct ForwardListInsertOperation {
-		// Guard for list insert failure
-		ForwardListInsertOperation() noexcept
+	struct ForwardListInsertGuard {
+		// Guard for list insertion failure
+		ForwardListInsertGuard() noexcept
 			: head(), tail() {}
 
-		ForwardListInsertOperation(const ForwardListInsertOperation&)				= delete;
-		ForwardListInsertOperation& operator=(const ForwardListInsertOperation&)	= delete;
+		ForwardListInsertGuard(const ForwardListInsertGuard&)				= delete;
+		ForwardListInsertGuard& operator=(const ForwardListInsertGuard&)	= delete;
 
-		~ForwardListInsertOperation() {
+		~ForwardListInsertGuard() {
 			if (tail == _NodePointer{}) {
 				return;
 			}
@@ -216,13 +201,13 @@ private:
 		}
 
 		template<class... Args>
-		void append_n(const size_type count, const Args&... args) {
+		void append_n(size_type count, const Args&... args) {
 			// Append count elements by constructing in place using args
 			if (count == 0) {
 				return;
 			}
 
-			NodeConstructGuard guard;
+			memory::NodeAllocateGuard<_NodeType> guard;
 			if (tail == _NodePointer{}) {
 				guard.allocate();
 				memory::construct_at(std::addressof(guard.node->value), args...);
@@ -233,11 +218,11 @@ private:
 
 			for (; 0 < count; --count) {
 				guard.allocate();
-				memory::construct_at(std::addressof(guard.node->value), args...);
+				memory::construct_at(std::addressof(guard.node->value), args...); 
 				memory::construct_at(std::addressof(tail->next), guard.node);
 				tail = guard.node;
 			}
-			guard.release();
+			(void) guard.release();
 		}
 
 		template<class It, class Se>
@@ -247,7 +232,7 @@ private:
 				return;
 			}
 
-			NodeConstructGuard guard;
+			memory::NodeAllocateGuard<_NodeType> guard;
 			if (tail == _NodePointer{}) {
 				guard.allocate();
 				memory::construct_at(std::addressof(guard.node->value), *first);
@@ -286,7 +271,7 @@ private:
 		_NodePointer tail; // Points to the most recently constructed node
 	};
 
-	struct ForwardListRemoveOperation {
+	struct ForwardListRemoveGuard {
 		/*
 		This serves 2 purposes:
 			1. RAII guard for list remove failure
@@ -298,13 +283,13 @@ private:
 		including ones that would be removed. Destructing nodes immediately after matching could invalidate
 		the predicate's captured references, leading to undefined behavior.
 		*/
-		ForwardListRemoveOperation() noexcept
+		ForwardListRemoveGuard() noexcept
 			: head(), tail(std::addressof(head)) {}
 
-		ForwardListRemoveOperation(const ForwardListRemoveOperation&)				= delete;
-		ForwardListRemoveOperation& operator=(const ForwardListRemoveOperation&)	= delete;
+		ForwardListRemoveGuard(const ForwardListRemoveGuard&)				= delete;
+		ForwardListRemoveGuard& operator=(const ForwardListRemoveGuard&)	= delete;
 
-		~ForwardListRemoveOperation() {
+		~ForwardListRemoveGuard() {
 			auto subject = head;
 			while (subject) {
 				const auto nextNode = subject->next;
@@ -350,12 +335,17 @@ public:
 		this->_construct_n(count, val);
 	}
 
-	template<class It,
-		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
 	ForwardList(It first, It last)
 		: _data() {
 		const auto count = static_cast<size_type>(std::distance(first, last));
 		this->_construct_n(count, std::move(first), std::move(last));
+	}
+
+	ForwardList(std::initializer_list<T> initList)
+		: _data() {
+		this->_construct_n(initList.size(), initList.begin(), initList.end());
 	}
 
 	ForwardList(const ForwardList& other)
@@ -368,9 +358,8 @@ public:
 		_data.head = std::exchange(other._data.head, nullptr);
 	}
 
-	ForwardList(std::initializer_list<T> initList)
-		: _data() {
-		this->_construct_n(initList.size(), initList.begin(), initList.end());
+	~ForwardList() noexcept {
+		_data.clear();
 	}
 
 	ForwardList& operator=(const ForwardList& other) {
@@ -382,8 +371,8 @@ public:
 
 	ForwardList& operator=(ForwardList&& other) noexcept {
 		if (this != std::addressof(other)) {
-			this->clear();
-			_data.head = std::exchange(other._data.head, nullptr);
+			_data.clear();
+			_data.swap(other._data);
 		}
 		return *this;
 	}
@@ -391,10 +380,6 @@ public:
 	ForwardList& operator=(std::initializer_list<T> initList) {
 		this->_assign_range(initList.begin(), initList.end());
 		return *this;
-	}
-
-	~ForwardList() noexcept {
-		this->clear();
 	}
 
 	[[nodiscard]] iterator before_begin() noexcept {
@@ -491,21 +476,21 @@ public:
 	iterator insert_after(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val after where
 		if (count != 0) {
-			ForwardListInsertOperation insertOp;
-			insertOp.append_n(count, val);
-			return iterator(insertOp.attach_after(where.ptr));
+			ForwardListInsertGuard guard;
+			guard.append_n(count, val);
+			return iterator(guard.attach_after(where.ptr));
 		}
 		return iterator(where.ptr);
 	}
 
-	template<class It,
-		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
 	iterator insert_after(const_iterator where, It first, It last) {
 		// Insert range [first, last) after where
 		if (first != last) {
-			ForwardListInsertOperation insertOp;
-			insertOp.append_range(std::move(first), std::move(last));
-			return iterator(insertOp.attach_after(where.ptr));
+			ForwardListInsertGuard guard;
+			guard.append_range(std::move(first), std::move(last));
+			return iterator(guard.attach_after(where.ptr));
 		}
 		return iterator(where.ptr);
 	}
@@ -517,12 +502,12 @@ public:
 
 	void assign(const size_type count, const T& val) {
 		// Assign count * val
-		this->clear();
+		_data.clear();
 		this->insert_after(this->before_begin(), count, val);
 	}
 
-	template<class It,
-		std::enable_if_t<std::input_or_output_iterator<It> && std::equality_comparable<It>, int> = 0>
+	template<std::input_iterator It>
+		requires std::sentinel_for<It, It>
 	void assign(It first, It last) {
 		// Assign range [first, last)
 		this->_assign_range(std::move(first), std::move(last));
@@ -559,19 +544,13 @@ public:
 
 	void clear() noexcept {
 		// Erase all elements
-		auto currNode = std::exchange(_data.head, nullptr);
-		auto nextNode = _NodePointer{};
-		for (; currNode; currNode = nextNode) {
-			nextNode = currNode->next;
-			_NodeType::free_node(currNode);
-		}
+		_data.clear();
 	}
 
 	void swap(ForwardList& other) noexcept {
-		// Swap contents with other
-		using std::swap;
+		// Swap with other
 		if (this != std::addressof(other)) {
-			swap(_data.head, other._data.head); 
+			_data.swap(other._data);
 		}
 	}
 
@@ -685,27 +664,27 @@ private:
 	template<class... Args>
 	void _construct_n(const size_type count, Args&&... args) {
 		// Construct list using args
-		ForwardListInsertOperation insertOp;
+		ForwardListInsertGuard guard;
 		if constexpr (sizeof...(Args) == 0) {
-			insertOp.append_n(count);
+			guard.append_n(count);
 		}
 		else if constexpr (sizeof...(Args) == 1) {
-			insertOp.append_n(count, args...);
+			guard.append_n(count, args...);
 		}
 		else if constexpr (sizeof...(Args) == 2) {
-			insertOp.append_range(std::forward<Args>(args)...);
+			guard.append_range(std::forward<Args>(args)...);
 		}
 		else {
 			static_assert(false, "Unexpected number of arguments");
 		}
 
-		insertOp.attach_after(_data.before_head());
+		guard.attach_after(_data.before_head());
 	}
 
 	template<class... Args>
 	void _insert_after(_NodePointer node, Args&&... args) {
 		// Insert after node by perfect forwarding args
-		NodeConstructGuard guard;
+		memory::NodeAllocateGuard<_NodeType> guard;
 		guard.allocate();
 		memory::construct_at(std::addressof(guard.node->value), std::forward<Args>(args)...);
 		memory::construct_at(std::addressof(guard.node->next), node->next);
@@ -720,9 +699,9 @@ private:
 			const auto nextNode = currNode->next;
 			if (!nextNode) {
 				// Runs out of nodes, insert the remaining nodes to *this
-				ForwardListInsertOperation insertOp;
-				insertOp.append_range(first, last);
-				insertOp.attach_after(currNode);
+				ForwardListInsertGuard guard;
+				guard.append_range(first, last);
+				guard.attach_after(currNode);
 				return;
 			}
 			// Assign [first, last) to current nodes
@@ -795,12 +774,12 @@ private:
 			return 0;
 		}
 
-		ForwardListRemoveOperation removeOp;
+		ForwardListRemoveGuard guard;
 
 		size_type removed = 0;
 		for (auto currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
 			if (pred(nextNode->value)) {
-				nextNode = removeOp.extract_after(currNode);
+				nextNode = guard.extract_after(currNode);
 				++removed;
 			}
 			else {
@@ -818,12 +797,12 @@ private:
 			return 0;
 		}
 
-		ForwardListRemoveOperation removeOp;
+		ForwardListRemoveGuard guard;
 
 		size_type removed = 0;
 		for (auto currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
 			if (pred(currNode->value, nextNode->value)) {
-				nextNode = removeOp.extract_after(currNode);
+				nextNode = guard.extract_after(currNode);
 				++removed;
 			}
 			else {
