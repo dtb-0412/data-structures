@@ -191,8 +191,6 @@ public:
 	using difference_type	= DiffT;
 	using pointer			= Ptr;
 	using const_pointer		= ConstPtr;
-	using reference			= value_type&;
-	using const_reference	= const value_type&;
 
 	constexpr DynamicArrValue() noexcept
 		: first(), last(), end() {}
@@ -386,7 +384,7 @@ public:
 
 	constexpr DynamicArray(DynamicArray&& other) noexcept
 		: _data() {
-		_data.swap(other.data);
+		_data.swap(other._data);
 	}
 
 	constexpr ~DynamicArray() noexcept {

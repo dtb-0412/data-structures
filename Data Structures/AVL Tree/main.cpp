@@ -12,7 +12,13 @@ public:
 	Int() = default;
 	
 	explicit Int(int val)
-		: data(val) {}
+		: data(val) {
+		std::cout << "Int(" << data << ")\n";
+	}
+
+	~Int() noexcept {
+		std::cout << "~Int(" << data << ")\n";
+	}
 
 	friend ostream& operator<<(ostream& os, const Int& obj) {
 		return os << obj.data;
@@ -22,22 +28,21 @@ public:
 };
 
 // Create a transparent comparator for Int
-//struct IntCompare {
-//	bool operator()(const Int& a, const Int& b) const {
-//		return a.data < b.data;
-//	}
-//
-//	[[nodiscard]] bool operator()(int a, const Int& b) const {
-//		return a < b.data;
-//	}
-//
-//	[[nodiscard]] bool operator()(const Int& a, int b) const {
-//		return a.data < b;
-//	}
-//
-//	using is_transparent	= void;
-//	using IsTransparent		= void;
-//};
+struct IntCompare {
+	bool operator()(const Int& a, const Int& b) const {
+		return a.data < b.data;
+	}
+
+	[[nodiscard]] bool operator()(int a, const Int& b) const {
+		return a < b.data;
+	}
+
+	[[nodiscard]] bool operator()(const Int& a, int b) const {
+		return a.data < b;
+	}
+
+	using is_transparent = void;
+};
 
 //[[nodiscard]] bool operator<(const Int& a, const Int& b) {
 //	return a.data < b.data;
@@ -53,35 +58,34 @@ public:
 
 int main() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
+	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
 
-	AVLTree<int> tree;
-	for (const auto& val : data) {
-		std::cout << "Inserting " << val << "\n";
-		tree.emplace(val);
+	{
+		AVLTree<Int, IntCompare> tree;
+		for (const auto& val : data) {
+			std::cout << "Inserting " << val << "\n";
+			tree.emplace(val);
+		}
+
+		std::cout << tree.min() << " - " << tree.max() << "\n";
+		if (std::next(tree.begin()) == tree.end()) {
+			std::cout << "Correct\n";
+		}
+
+		AVLTree<Int, IntCompare> tree2;
+		tree2.insert(data2.begin(), data2.end());
+		tree2.level_order();
+		std::cout << "\n\n";
+
+		tree.merge(tree2);
+
+		printer::Printer printer;
+		printer.sep(", ").alt("Empty\n");
+		printer
+			.prompt("Tree: ")
+			.print_range(tree.begin(), tree.end());
+		tree.level_order();
 	}
-
-	//tree.emplace(5);
-
-	std::cout << tree.min() << " - " << tree.max() << "\n";
-	if (std::next(tree.begin()) == tree.end()) {
-		std::cout << "Correct\n";
-	}
-	//std::cout << (std::next(tree.begin(), 1) == tree.end()) << "\n";
-
-	std::cout << "Finished\n";
-	for (auto i = tree.begin(); i != tree.end(); ++i) {
-		std::cout << *i << " ";
-	}
-
-	//printer::Printer p;
-	//p.sep(", ").alt("Empty\n");
-	//p.print_range(tree.begin(), tree.end());
-
-	//tree.print(TreeOrder::LEVEL_ORDER);
-	//std::ranges::move(data.begin(), data.begin() + 1, data.end() + 2);
-
-	cout << "\nPress Enter to exit...";
-	cin.get();
 	return 0;
 }
 

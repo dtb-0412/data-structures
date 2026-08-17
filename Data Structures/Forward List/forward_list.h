@@ -120,8 +120,6 @@ public:
 	using difference_type	= DiffT;
 	using pointer			= Ptr;
 	using const_pointer		= ConstPtr;
-	using reference			= value_type&;
-	using const_reference	= const value_type&;
 
 public:
 	ForwardListValue() noexcept

@@ -3,6 +3,7 @@
 #define ALV_TREE_H
 
 #include<iostream>
+#include<queue>
 
 #include"concepts.hpp"
 #include"memory.hpp"
@@ -15,13 +16,13 @@
 template<class AVLTreeVal>
 class AVLTreeConstIterator {
 private:
-	using _NodePointer = typename AVLTreeVal::NodePointer;
+	using _NodePointer = typename AVLTreeVal::node_pointer;
 
 public:
 	using iterator_category = std::bidirectional_iterator_tag;
-	using value_type		= typename AVLTreeVal::ValueType;
-	using difference_type	= typename AVLTreeVal::DifferenceType;
-	using pointer			= typename AVLTreeVal::ConstPointer;
+	using value_type		= typename AVLTreeVal::value_type;
+	using difference_type	= typename AVLTreeVal::difference_type;
+	using pointer			= typename AVLTreeVal::const_pointer;
 	using reference			= const value_type&;
 
 	AVLTreeConstIterator() noexcept
@@ -111,9 +112,9 @@ private:
 
 public:
 	using iterator_category = std::bidirectional_iterator_tag;
-	using value_type		= typename AVLTreeVal::ValueType;
-	using difference_type	= typename AVLTreeVal::DifferenceType;
-	using pointer			= typename AVLTreeVal::Pointer;
+	using value_type		= typename AVLTreeVal::value_type;
+	using difference_type	= typename AVLTreeVal::difference_type;
+	using pointer			= typename AVLTreeVal::pointer;
 	using reference			= value_type&;
 
 	[[nodiscard]] reference operator*() const noexcept {
@@ -149,40 +150,42 @@ public:
 
 template<class ValueT, class HeightT, class BalanceT>
 struct AVLTreeNode {
-	using NodePointer	= AVLTreeNode*;
-	using ValueType		= ValueT;
-	using HeightType	= HeightT;
-	using BalanceType	= BalanceT;
+	using node_pointer	= AVLTreeNode*;
+	using value_type	= ValueT;
+	using height_type	= HeightT;
+	using balance_type	= BalanceT;
 
 	AVLTreeNode() = default;
 
-	AVLTreeNode(const AVLTreeNode&) = delete;
-	AVLTreeNode& operator=(const AVLTreeNode&) = delete;
+	AVLTreeNode(const AVLTreeNode&)				= delete;
+	AVLTreeNode& operator=(const AVLTreeNode&)	= delete;
 
-	[[nodiscard]] static NodePointer construct_head() {
-		// Construct empty head node, no value
-		const NodePointer newHead = static_cast<NodePointer>(memory::allocate(1, sizeof(AVLTreeNode)));
-		memory::construct_at(std::addressof(newHead->left), newHead);
-		memory::construct_at(std::addressof(newHead->right), newHead);
-		newHead->parent = nullptr;
+	[[nodiscard]] static node_pointer construct_head() {
+		// Construct empty head sentinel with no value
+		const auto newHead = static_cast<node_pointer>(memory::allocate(1, sizeof(AVLTreeNode)));
+		memory::construct_at(std::addressof(newHead->left));	// Any value is fine, will be reassigned when new node is inserted
+		memory::construct_at(std::addressof(newHead->right));
+		memory::construct_at(std::addressof(newHead->parent));	// Parent must be nullptr, or everything fails!
+		newHead->height = 0;
 		newHead->isHead = true;
 		return newHead;
 	}
 
 	template<class... Args>
-	[[nodiscard]] static NodePointer construct_node(Args&&... args) {
-		// Construct node from args
-		const NodePointer newNode = static_cast<NodePointer>(memory::allocate(1, sizeof(AVLTreeNode)));
-		memory::construct_at(std::addressof(newNode->value), std::forward<Args>(args)...);
-		newNode->left = nullptr;
-		newNode->right = nullptr;
-		newNode->parent = nullptr;
-		newNode->height = 1;
-		newNode->isHead = false;
-		return newNode;
+	[[nodiscard]] static node_pointer construct_node(Args&&... args) {
+		// Construct node with value from args
+		memory::NodeAllocateGuard<AVLTreeNode> guard;
+		guard.allocate();
+		memory::construct_at(std::addressof(guard.node->value), std::forward<Args>(args)...);
+		memory::construct_at(std::addressof(guard.node->left));		// Left and right of leaf node must be nullptr
+		memory::construct_at(std::addressof(guard.node->right));
+		memory::construct_at(std::addressof(guard.node->parent));	// Any value is fine, will be reassigned during insertion
+		guard.node->height = 1;
+		guard.node->isHead = false;
+		return guard.release();
 	}
 
-	static void free_empty_node(NodePointer node) noexcept {
+	static void free_empty_node(node_pointer node) noexcept {
 		// Destroy pointer members and deallocate node memory. Only empty nodes should be passed (after destroying value members in free_node() or head node)
 		memory::destruct_at(std::addressof(node->left));
 		memory::destruct_at(std::addressof(node->right));
@@ -190,18 +193,18 @@ struct AVLTreeNode {
 		memory::deallocate(node, sizeof(AVLTreeNode));
 	}
 
-	static void free_node(NodePointer node) noexcept {
+	static void free_node(node_pointer node) noexcept {
 		// Destroy entire node, along with its value
 		memory::destruct_at(std::addressof(node->value));
 		free_empty_node(node);
 	}
 
-	void release_child(NodePointer child) noexcept {
+	void release_child(node_pointer child) noexcept {
 		// Release child, unlink it from *this
 		this->replace_child(child, nullptr);
 	}
 
-	void replace_child(NodePointer oldChild, NodePointer newChild) noexcept {
+	void replace_child(node_pointer oldChild, node_pointer newChild) noexcept {
 		// If oldChild and *this are parent and child, replace oldChild with newChild
 		if (isHead) {
 			parent = newChild;
@@ -221,49 +224,49 @@ struct AVLTreeNode {
 		}
 	}
 	// Align for minimal padding
-	NodePointer left;	// 8 bytes pointer
-	NodePointer right;	// 8 bytes pointer
-	NodePointer parent;	// 8 bytes pointer
+	node_pointer left;		// 8 bytes pointer
+	node_pointer right;		// 8 bytes pointer
+	node_pointer parent;	// 8 bytes pointer
 
-	ValueType	value;	// sizeof(ValueType)
-	HeightType	height; // 1 byte, assuming AVL tree height <= 255
+	value_type	value;		// sizeof(value_type)
+	height_type	height;		// 1 byte, assuming AVL tree height <= 255
 
-	bool isHead;		// 1 byte boolean
+	bool isHead; // 1 byte boolean
 };
 
 template<class NodeT>
-struct AVLTreeTempNode {
+struct AVLTempNodeGuard2 {
 	// Struct to temporarily store a constructed node
-	using NodeType = NodeT;
-	using NodePointer = typename NodeType::NodePointer;
-	using ValueType = typename NodeType::ValueType;
+	using node_type		= NodeT;
+	using node_pointer	= typename node_type::node_pointer;
+	using value_type	= typename node_type::value_type;
 
 
 	template<class... Args>
-	explicit AVLTreeTempNode(Args&&... args)
-		: ptr(nullptr) { // Prevent double delete when allocation throws
-		ptr = NodeType::construct_node(std::forward<Args>(args)...);
+	explicit AVLTempNodeGuard2(Args&&... args)
+		: ptr() { // Prevent double delete when allocation throws
+		ptr = node_type::construct_node(std::forward<Args>(args)...);
 	}
 
-	AVLTreeTempNode(const AVLTreeTempNode&) = delete;
-	AVLTreeTempNode& operator=(const AVLTreeTempNode&) = delete;
+	AVLTempNodeGuard2(const AVLTempNodeGuard2&)				= delete;
+	AVLTempNodeGuard2& operator=(const AVLTempNodeGuard2&)	= delete;
 
-	~AVLTreeTempNode() noexcept {
+	~AVLTempNodeGuard2() noexcept {
 		if (ptr) {
-			NodeType::free_node(this->release());
+			node_type::free_node(this->release());
 		}
 	}
 
-	[[nodiscard]] NodePointer release() noexcept {
+	[[nodiscard]] node_pointer release() noexcept {
 		// Give up node ownership and return contained pointer
 		return std::exchange(ptr, nullptr);
 	}
 
-	[[nodiscard]] const ValueType& get_value() noexcept {
+	[[nodiscard]] const value_type& get_value() noexcept {
 		return ptr->value;
 	}
 
-	NodePointer ptr;
+	node_pointer ptr;
 };
 
 enum NodeChild : bool {
@@ -278,8 +281,8 @@ struct NodeLocation {
 
 template<class NodePtr>
 struct NodeFindResult {
-	NodePtr bound;					// Lower bound of the find result, used for duplicate checking
 	NodeLocation<NodePtr> location;	// Location to insert new node
+	NodePtr bound;					// Lower bound of the find result, used for duplicate checking
 };
 
 template<class NodePtr>
@@ -291,24 +294,21 @@ struct NodeFindHintResult {
 template<class ValueT, class SizeT, class DiffT, class Ptr, class ConstPtr, class NodeT>
 class AVLTreeValue {
 public:
-	using NodeType = NodeT;
-	using NodePointer = typename NodeType::NodePointer;
-	using HeightType = typename NodeType::HeightType;
-	using BalanceType = typename NodeType::BalanceType;
+	using node_type			= NodeT;
+	using node_pointer		= typename node_type::node_pointer;
+	using height_type		= typename node_type::height_type;
+	using balance_type		= typename node_type::balance_type;
 
-	using ValueType = ValueT;
-	using SizeType = SizeT;
-	using DifferenceType = DiffT;
-	using Pointer = Ptr;
-	using ConstPointer = ConstPtr;
-	using Reference = ValueType&;
-	using ConstReference = const ValueType&;
+	using value_type		= ValueT;
+	using size_type			= SizeT;
+	using difference_type	= DiffT;
+	using pointer			= Ptr;
+	using const_pointer		= ConstPtr;
 
 	AVLTreeValue() noexcept
-		: head(), size(0) {
-	}
+		: head(), size(0) {}
 
-	[[nodiscard]] static NodePointer min(NodePointer node)  noexcept {
+	[[nodiscard]] static node_pointer min(node_pointer node)  noexcept {
 		// Get the leftmost node in subtree at node
 		while (node->left) {
 			node = node->left;
@@ -316,7 +316,7 @@ public:
 		return node;
 	}
 
-	[[nodiscard]] static NodePointer max(NodePointer node)  noexcept {
+	[[nodiscard]] static node_pointer max(node_pointer node)  noexcept {
 		// Get the rightmost node in subtree at node
 		while (node->right) {
 			node = node->right;
@@ -324,38 +324,39 @@ public:
 		return node;
 	}
 
-	[[nodiscard]] static HeightType get_height(const NodePointer node) noexcept {
+	[[nodiscard]] static height_type get_height(node_pointer node) noexcept {
 		// Get node height
-		return static_cast<HeightType>(node ? node->height : 0);
+		return static_cast<height_type>(node ? node->height : 0);
 	}
 
-	[[nodiscard]] static BalanceType get_balance_factor(const NodePointer node) noexcept {
+	[[nodiscard]] static balance_type get_balance_factor(node_pointer node) noexcept {
 		// Get balance factor at node
 		if (node) {
-			const auto leftHeight = AVLTreeValue::get_height(node->left);
-			const auto rightHeight = AVLTreeValue::get_height(node->right);
-			return static_cast<BalanceType>(rightHeight - leftHeight);
+			const auto leftHeight	= AVLTreeValue::get_height(node->left);
+			const auto rightHeight	= AVLTreeValue::get_height(node->right);
+			return static_cast<balance_type>(rightHeight - leftHeight);
 		}
 		return 0;
 	}
 
-	static void update_height(const NodePointer node) noexcept {
+	static void update_height(const node_pointer node) noexcept {
 		// Update node height
-		const auto leftHeight = AVLTreeValue::get_height(node->left);
-		const auto rightHeight = AVLTreeValue::get_height(node->right);
-		node->height = static_cast<HeightType>(std::max(leftHeight, rightHeight) + 1);
+		const auto leftHeight	= AVLTreeValue::get_height(node->left);
+		const auto rightHeight	= AVLTreeValue::get_height(node->right);
+		node->height = static_cast<height_type>(std::max(leftHeight, rightHeight) + 1);
 	}
 
-	void rotate_left(const NodePointer oldRoot) noexcept {
+	void rotate_left(node_pointer oldRoot) noexcept {
 		// Perform counter-clockwise rotation on subtree at oldRoot
-		const NodePointer parent = oldRoot->parent;
-		const NodePointer newRoot = oldRoot->right;
-		const NodePointer child = newRoot->left;
+		const node_pointer parent	= oldRoot->parent;
+		const node_pointer newRoot	= oldRoot->right;
+		const node_pointer child	= newRoot->left;
 
 		parent->replace_child(oldRoot, newRoot);
+
 		oldRoot->parent = newRoot;
-		oldRoot->right = child;
-		newRoot->left = oldRoot;
+		oldRoot->right	= child;
+		newRoot->left	= oldRoot;
 
 		if (child) { // Reattach newRoot's left child to oldRoot
 			child->parent = oldRoot;
@@ -365,16 +366,17 @@ public:
 		AVLTreeValue::update_height(newRoot);
 	}
 
-	void rotate_right(const NodePointer oldRoot) noexcept {
+	void rotate_right(node_pointer oldRoot) noexcept {
 		// Perform clockwise rotation on subtree at oldRoot
-		const NodePointer parent = oldRoot->parent;
-		const NodePointer newRoot = oldRoot->left;
-		const NodePointer child = newRoot->right;
+		const node_pointer parent	= oldRoot->parent;
+		const node_pointer newRoot	= oldRoot->left;
+		const node_pointer child	= newRoot->right;
 
 		parent->replace_child(oldRoot, newRoot);
+
 		oldRoot->parent = newRoot;
-		oldRoot->left = child;
-		newRoot->right = oldRoot;
+		oldRoot->left	= child;
+		newRoot->right	= oldRoot;
 
 		if (child) { // Reattach newRoot's right child to oldRoot
 			child->parent = oldRoot;
@@ -384,7 +386,7 @@ public:
 		AVLTreeValue::update_height(newRoot);
 	}
 
-	bool try_rebalance(const NodePointer node) noexcept {
+	bool try_rebalance(node_pointer node) noexcept {
 		// Check for imbalance and rotate if needed
 		const auto nodeBalance = AVLTreeValue::get_balance_factor(node);
 		if (nodeBalance < -1) { // Subtree at node is imbalance to the left
@@ -393,10 +395,11 @@ public:
 				this->rotate_right(node);
 				return true;
 			}
-			// Left - Right
-			this->rotate_left(node->left);
-			this->rotate_right(node);
-			return true;
+			else { // Left - Right
+				this->rotate_left(node->left);
+				this->rotate_right(node);
+				return true;
+			}
 		}
 
 		if (nodeBalance > 1) { // Subtree at node is imbalance to the right
@@ -405,19 +408,20 @@ public:
 				this->rotate_left(node);
 				return true;
 			}
-			// Right - Left
-			this->rotate_right(node->right);
-			this->rotate_left(node);
-			return true;
+			else { // Right - Left
+				this->rotate_right(node->right);
+				this->rotate_left(node);
+				return true;
+			}
 		}
 		return false;
 	}
 
-	void fixTree(NodePointer node, NodePointer newNode) noexcept {
+	void fix_tree(node_pointer node, node_pointer newNode) noexcept {
 		// Travel upwards from node to root, update node height and rebalance if needed
 		AVLTreeValue::update_height(newNode); // Reset node height for correct rebalancing
 
-		while (true) {
+		for (;;) {
 			if (node == head) { // Reach head before rebalancing
 				return;
 			}
@@ -429,19 +433,24 @@ public:
 			node = node->parent;
 		}
 
-		while ((node = node->parent) != head) { // Update the remaining nodes height
+		for (;;) { // Update the remaining nodes height
+			node = node->parent;
+			if (node == head) {
+				return;
+			}
+
 			AVLTreeValue::update_height(node);
 		}
 	}
 
-	NodePointer insert(const NodeLocation<NodePointer> location, const NodePointer newNode) noexcept {
+	node_pointer insert(const NodeLocation<node_pointer> location, node_pointer newNode) noexcept {
 		// Insert newNode at location
 		++size;
 		if (!location.parent) { // First node in tree
 			newNode->parent = head;
-			head->left = newNode;
-			head->right = newNode;
-			head->parent = newNode;
+			head->left		= newNode;
+			head->right		= newNode;
+			head->parent	= newNode;
 			return newNode;
 		}
 
@@ -459,29 +468,29 @@ public:
 			}
 		}
 
-		this->fixTree(location.parent, newNode);
+		this->fix_tree(location.parent, newNode);
 		return newNode;
 	}
 
-	std::pair<NodePointer, NodePointer> extract(const AVLTreeConstIterator<AVLTreeValue> pos) noexcept {
+	std::pair<node_pointer, node_pointer> extract(AVLTreeConstIterator<AVLTreeValue> pos) noexcept {
 		// Extract node pointed by pos
 		--size;
-		const NodePointer extracted = pos.getPointer(); // UB: pos == AVLTree::end()
-		const NodePointer nextNode = std::next(pos, 1).getPointer();
+		const node_pointer extracted	= pos.ptr; // UB: pos == AVLTree::end()
+		const node_pointer nextNode		= std::next(pos, 1).ptr;
 		if (size == 0) { // Extract final node
-			head->left = nullptr;
+			head->left	= nullptr;
 			head->right = nullptr;
 		}
 		else if (extracted == head->left) { // Extract leftmost node
 			head->left = nextNode;
 		}
 		else if (extracted == head->right) { // Extract rightmost node
-			head->right = std::prev(pos, 1).getPointer();
+			head->right = std::prev(pos, 1).ptr;
 		}
 
-		const NodePointer parent = extracted->parent;
+		node_pointer parent = extracted->parent;
 		if (extracted->left && extracted->right) { // Node has both children
-			const NodePointer successor = this->min(extracted->right);
+			const node_pointer successor = this->min(extracted->right);
 			successor->parent->release_child(successor);
 			extracted->parent->replace_child(extracted, successor);
 
@@ -500,60 +509,122 @@ public:
 			parent->release_child(extracted);
 		}
 		else { // Node has a single child
-			const NodePointer childNode = std::exchange((extracted->left) ? extracted->left : extracted->right, nullptr);
+			const node_pointer childNode = std::exchange((extracted->left) ? extracted->left : extracted->right, nullptr);
 			parent->replace_child(extracted, childNode);
 		}
 
-		this->fixTree(std::exchange(extracted->parent, nullptr), extracted);
+		this->fix_tree(std::exchange(extracted->parent, nullptr), extracted);
 		return std::make_pair(extracted, nextNode);
 	}
 
-	void clear(NodePointer node) noexcept {
+	void clear_subtree(node_pointer node) noexcept {
 		// Clear entire subtree at node recursively
 		while (node) {
-			this->clear(node->right);
-			NodeType::free_node(std::exchange(node, node->left));
+			this->clear_subtree(node->right);
+			const node_pointer nextNode = node->left;
+			node_type::free_node(node);
+			node = nextNode;
 		}
 	}
 
+	void clear() noexcept {
+		this->clear_subtree(head->parent);
+		node_type::free_empty_node(head);
+	}
+
 	void swap(AVLTreeValue& other) noexcept {
-		using std::swap; // ADL
+		using std::swap;
 		swap(head, other.head);
 		swap(size, other.size);
 	}
 
 	/*
-		Node head serves as the end() node for tree traversal
+		Node head serves as the root sentinel and end() node for tree traversal
 
 		head->left:		points to the leftmost node (min node)
 		head->right:	points to the rightmost node (max node)
 		head->parent:	points to the actual root node
 	*/
-	NodePointer head;
-
-	SizeType size;
+	node_pointer	head;
+	size_type		size;
 };
 
 template<class T, class Comp = std::less<>>
 class AVLTree {
 public:
-	using value_type = T;
-	using size_type = std::size_t;
-	using difference_type = std::ptrdiff_t;
-	using pointer = T*;
-	using const_pointer = const T*;
-	using reference = T&;
-	using const_reference = const T&;
+	using value_type		= T;
+	using size_type			= std::size_t;
+	using difference_type	= std::ptrdiff_t;
+	using pointer			= T*;
+	using const_pointer		= const T*;
+	using reference			= T&;
+	using const_reference	= const T&;
 
 private:
-	using _NodeType = AVLTreeNode<value_type, uint8_t, int8_t>;
-	using _NodePointer = typename _NodeType::NodePointer;
+	using _NodeType		= AVLTreeNode<value_type, uint8_t, int8_t>;
+	using _NodePointer	= typename _NodeType::node_pointer;
 
 	using _AVLTreeValue = AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
 
+	struct TreeCopyConstructGuard {
+		TreeCopyConstructGuard(_AVLTreeValue data)
+			: data(std::addressof(data)) {}
+
+		TreeCopyConstructGuard(const TreeCopyConstructGuard&)				= delete;
+		TreeCopyConstructGuard& operator=(const TreeCopyConstructGuard&)	= delete;
+
+		~TreeCopyConstructGuard() {
+			if (data) {
+				data->clear();
+			}
+		}
+
+		void release() noexcept {
+			data = nullptr;
+		}
+
+		_AVLTreeValue* data;
+	};
+
+	struct AVLTempNodeGuard {
+		template<class... Args>
+		AVLTempNodeGuard(_NodePointer head, Args&&... args)
+			: base() {
+			base.allocate();
+			memory::construct_at(std::addressof(base.node->value), std::forward<Args>(args)...);
+			memory::construct_at(std::addressof(base.node->left));
+			memory::construct_at(std::addressof(base.node->right));
+			memory::construct_at(std::addressof(base.node->parent));
+			base.node->height = 1;
+			base.node->isHead = false;
+		}
+
+		AVLTempNodeGuard(const AVLTempNodeGuard&)				= delete;
+		AVLTempNodeGuard& operator=(const AVLTempNodeGuard&)	= delete;
+
+		~AVLTempNodeGuard() {
+			if (base.node) {
+				memory::destruct_at(std::addressof(base.node->value));
+				memory::destruct_at(std::addressof(base.node->left));
+				memory::destruct_at(std::addressof(base.node->right));
+				memory::destruct_at(std::addressof(base.node->parent));
+			}
+		}
+
+		_NodePointer release() noexcept {
+			return base.release();
+		}
+
+		decltype(auto) get_value() noexcept {
+			return base.node->value;
+		}
+
+		memory::NodeAllocateGuard<_NodeType> base;
+	};
+
 public:
-	using iterator = AVLTreeConstIterator<_AVLTreeValue>;
-	using const_iterator = AVLTreeConstIterator<_AVLTreeValue>;
+	using iterator			= AVLTreeConstIterator<_AVLTreeValue>;
+	using const_iterator	= AVLTreeConstIterator<_AVLTreeValue>;
 
 	AVLTree()
 		: _data() {
@@ -568,6 +639,17 @@ public:
 		this->_copy(other);
 	}
 
+	AVLTree(AVLTree&& other) noexcept
+		: _data() {
+		// Construct tree by moving from other
+		_data.head = _NodeType::construct_head();
+		_data.swap(other._data);
+	}
+
+	~AVLTree() noexcept {
+		_data.clear();
+	}
+
 	AVLTree& operator=(const AVLTree& other) {
 		if (this != std::addressof(other)) {
 			this->clear();
@@ -576,24 +658,12 @@ public:
 		return *this;
 	}
 
-	AVLTree(AVLTree&& other) noexcept
-		: _data() {
-		// Construct tree by moving from other
-		_data.head = _NodeType::construct_head();
-		_data.swap(other._data);
-	}
-
 	AVLTree& operator=(AVLTree&& other) noexcept {
 		if (this != std::addressof(other)) {
 			this->clear();
 			_data.swap(other._data);
 		}
 		return *this;
-	}
-
-	~AVLTree() noexcept {
-		_data.clear(_data.head->parent);
-		_NodeType::free_empty_node(_data.head);
 	}
 
 	[[nodiscard]] iterator begin() noexcept {
@@ -658,7 +728,7 @@ public:
 	template<class... Args>
 	iterator emplace_hint(const_iterator hint, Args&&... args) {
 		// Insert with hint by constructing in place using args
-		return iterator(this->_emplace_hint(hint.getPointer(), std::forward<Args>(args)...));
+		return iterator(this->_emplace_hint(hint.ptr, std::forward<Args>(args)...));
 	}
 
 	std::pair<iterator, bool> insert(const value_type& val) {
@@ -739,9 +809,10 @@ public:
 
 	void clear() noexcept {
 		// Erase all
-		_data.clear(std::exchange(_data.head->parent, nullptr));
-		_data.head->left = _data.head;
-		_data.head->right = _data.head;
+		_data.clear_subtree(_data.head->parent);
+		_data.head->left	= _data.head;
+		_data.head->right	= _data.head;
+		_data.head->parent	= nullptr;
 		_data.size = 0;
 	}
 
@@ -939,11 +1010,11 @@ public:
 
 	auto insert(NodeHandle&& handle) {
 		// Insert node from handle
-		if (handle.isEmpty()) {
+		if (handle.is_empty()) {
 			return InsertReturnType<iterator, NodeHandle>{end(), false, {}};
 		}
 
-		const auto node = handle.getPointer();
+		const auto node = handle.get_pointer();
 		NodeFindResult<_NodePointer> result = this->_find_lower_bound(node->value);
 		if (this->_is_duplicate_key(result.bound, node->value)) {
 			return InsertReturnType<iterator, NodeHandle>{iterator(result.bound), false, std::move(handle)};
@@ -959,11 +1030,11 @@ public:
 
 	iterator insert(const const_iterator hint, NodeHandle&& handle) {
 		// Insert node from handle with hint
-		if (handle.isEmpty()) {
+		if (handle.is_empty()) {
 			return end();
 		}
-		const auto node = handle.getPointer();
-		NodeFindHintResult<_NodePointer> result = this->_find_hint(hint.getPointer(), node->value);
+		const auto node = handle.get_pointer();
+		NodeFindHintResult<_NodePointer> result = this->_find_hint(hint.ptr, node->value);
 		if (result.isDuplicate) {
 			return iterator(result.location.parent);
 		}
@@ -977,42 +1048,42 @@ public:
 	}
 #endif // Has C++17
 
-	//struct DefaultPrint {
-	//	// Default print functor
-	//	template<class NodePointer>
-	//	void operator()(NodePointer node) const noexcept {
-	//		std::cout << node->value << " ";
-	//	}
-	//};
+	void level_order() {
+		// Print subtree at node in level-order
+		_NodePointer root = _data.head->parent;
+		if (!root) {
+			return;
+		}
 
-	//template<class PrintFnc = DefaultPrint, Sep>
-	//void print(const TreeOrder order, PrintFnc print = PrintFnc{}) {
-	//	// Print tree in specified order using print function
-	//	const _NodePointer root = _data.head->parent;
-	//	if (!root) {
-	//		return;
-	//	}
+		_NodePointer bound = root;
 
-	//	switch (order) {
-	//		case PRE_ORDER: {
-	//			this->_pre_order(root, print);
-	//			break;
-	//		}
-	//		case IN_ORDER: {
-	//			this->_in_order(root, print);
-	//			break;
-	//		}
-	//		case POST_ORDER: {
-	//			this->_post_order(root, print);
-	//			break;
-	//		}
-	//		case LEVEL_ORDER: {
-	//			this->_level_order(root, print);
-	//			break;
-	//		}
-	//	}
-	//	std::cout << "\n";
-	//}
+		std::queue<_NodePointer> nodesQueue;
+		nodesQueue.push(root);
+		while (!nodesQueue.empty()) {
+			const _NodePointer node = nodesQueue.front();
+			std::cout << node->value << " ";
+			
+			const bool isBound = node == bound;
+			if (isBound) {
+				std::cout << "| ";
+			}
+
+			nodesQueue.pop();
+			if (node->left) {
+				nodesQueue.push(node->left);
+				if (isBound) {
+					bound = node->left;
+				}
+			}
+			if (node->right) {
+				nodesQueue.push(node->right);
+				if (isBound) {
+					bound = node->right;
+				}
+			}
+		}
+		std::cout << "\n";
+	}
 
 private:
 	_NodePointer _copy_node(value_type& val) {
@@ -1069,7 +1140,7 @@ private:
 			Worst case:		O(log2(N)), using log2(N) comparisons
 			Average case:	O(log2(N))
 		*/
-		NodeFindResult<_NodePointer> result{ _data.head, { _data.head->parent, NodeChild::RIGHT } };
+		NodeFindResult<_NodePointer> result{ { _data.head->parent, NodeChild::RIGHT }, _data.head };
 		for (_NodePointer currNode = result.location.parent; currNode;) {
 			result.location.parent = currNode;
 			if (_comp(currNode->value, key)) {
@@ -1088,7 +1159,7 @@ private:
 	template<class KeyT>
 	[[nodiscard]] NodeFindResult<_NodePointer> _find_upper_bound(const KeyT& key) const {
 		// Find the smallest (or leftmost in-order) node that is strictly greater than key (or satisfies _comp(key, node value))
-		NodeFindResult<_NodePointer> result{ _data.head, { _data.head->parent, NodeChild::RIGHT } };
+		NodeFindResult<_NodePointer> result{ { _data.head->parent, NodeChild::RIGHT }, _data.head };
 		for (_NodePointer currNode = result.location.parent; currNode;) {
 			result.location.parent = currNode;
 			if (_comp(key, currNode->value)) {
@@ -1119,7 +1190,7 @@ private:
 			}
 		}
 		else if (_comp(key, hintNode->value)) { // key < *hintNode
-			const _NodePointer prevNode = std::prev(const_iterator(hintNode), 1).getPointer();
+			const _NodePointer prevNode = std::prev(const_iterator(hintNode), 1).ptr;
 			if (_comp(prevNode->value, key)) { // *(--hintNode) < key < *hintNode, insert here
 				if (!prevNode->right) {
 					return { { prevNode, NodeChild::RIGHT }, false };
@@ -1128,7 +1199,7 @@ private:
 			}
 		}
 		else if (_comp(hintNode->value, key)) { // key > *hintNode
-			const _NodePointer nextNode = std::next(const_iterator(hintNode), 1).getPointer();
+			const _NodePointer nextNode = std::next(const_iterator(hintNode), 1).ptr;
 			if (nextNode->isHead || _comp(key, nextNode->value)) { // *hintNode < key < *(++hintNode), insert here
 				if (!hintNode->right) {
 					return { { hintNode, NodeChild::RIGHT }, false };
@@ -1150,7 +1221,7 @@ private:
 	template<class... Args>
 	std::pair<_NodePointer, bool> _emplace(Args&&... args) {
 		// Insert by constructing node inplace using args
-		AVLTreeTempNode<_NodeType> tempNode(std::forward<Args>(args)...); // Create temporary node for initial node search
+		AVLTempNodeGuard tempNode(_data.head, std::forward<Args>(args)...); // Create temporary node for initial node search
 		const auto& key = tempNode.get_value();
 
 		const auto result = this->_find_lower_bound(key); // Find insert location
@@ -1167,7 +1238,7 @@ private:
 	template<class... Args>
 	_NodePointer _emplace_hint(const _NodePointer hintNode, Args&&... args) {
 		// Insert by constructing node inplace using args with given hint
-		AVLTreeTempNode<_NodeType> tempNode(std::forward<Args>(args)...);
+		AVLTempNodeGuard tempNode(_data.head, std::forward<Args>(args)...);
 		const auto& key = tempNode.get_value();
 
 		const auto result = this->_find_hint(hintNode, key);
@@ -1193,13 +1264,13 @@ private:
 		const auto begin = this->begin();
 		if (first == this->begin() && last == this->end()) { // Erase all elements
 			this->clear();
-			return last.getPointer();
+			return last.ptr;
 		}
 		// Erase nodes one at a time
 		while (first != last) {
 			this->_erase(first++); // UB
 		}
-		return last.getPointer();
+		return last.ptr;
 	}
 
 	template<class KeyT>
@@ -1253,29 +1324,6 @@ private:
 	//	this->_post_order(node->left, print);
 	//	this->_post_order(node->right, print);
 	//	print(node);
-	//}
-
-	//template<class PrintFnc>
-	//void _level_order(_NodePointer root, PrintFnc print) {
-	//	// Print subtree at node in level-order
-	//	if (!root) {
-	//		return;
-	//	}
-
-	//	std::queue<_NodePointer> nodesQueue;
-	//	nodesQueue.push(root);
-	//	while (!nodesQueue.is_empty()) {
-	//		const _NodePointer node = nodesQueue.front();
-	//		print(node);
-
-	//		nodesQueue.pop();
-	//		if (node->left) {
-	//			nodesQueue.push(node->left);
-	//		}
-	//		if (node->right) {
-	//			nodesQueue.push(node->right);
-	//		}
-	//	}
 	//}
 
 private:
