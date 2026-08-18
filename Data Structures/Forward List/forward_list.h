@@ -428,7 +428,10 @@ public:
 	}
 
 	[[nodiscard]] size_type max_size() const noexcept {
-		return static_cast<size_type>(-1) / sizeof(_NodeType);
+		return std::min(
+			static_cast<size_type>(std::numeric_limits<difference_type>::max()),
+			static_cast<size_type>(-1) / sizeof(_NodeType)
+		);
 	}
 
 	[[nodiscard]] bool is_empty() const noexcept {

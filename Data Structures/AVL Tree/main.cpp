@@ -44,18 +44,6 @@ struct IntCompare {
 	using is_transparent = void;
 };
 
-//[[nodiscard]] bool operator<(const Int& a, const Int& b) {
-//	return a.data < b.data;
-//}
-//
-//[[nodiscard]] bool operator<(int a, const Int& b) {
-//	return a < b.data;
-//}
-//
-//[[nodiscard]] bool operator<(const Int& a, int b) {
-//	return a.data < b;
-//}
-
 int main() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
@@ -74,7 +62,7 @@ int main() {
 
 		AVLTree<Int, IntCompare> tree2;
 		tree2.insert(data2.begin(), data2.end());
-		//tree2.level_order();
+		tree2.level_order();
 		std::cout << "\n\n";
 
 		tree.merge(tree2);
@@ -88,7 +76,7 @@ int main() {
 		printer
 			.prompt("Tree2: ")
 			.print_range(tree2.begin(), tree2.end());
-		//tree.level_order();
+		tree.level_order();
 	}
 	return 0;
 }
