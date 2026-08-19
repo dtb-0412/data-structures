@@ -1424,17 +1424,17 @@ template<
 >
 class _TreeTraits {
 public:
-	using key_type = KeyT;
-	using value_type = T;
-	using key_compare = Comp;
+	using key_type		= KeyT;
+	using value_type	= T;
+	using key_compare	= Comp;
 	using value_compare = key_compare;
 
 	using node_handle = _NodeHandle<
 		_AVLTreeNode<value_type, uint8_t, int8_t>, _NodeHandleBase, key_type
 	>;
 
-	static constexpr bool isMulti = _isMulti;
-	static constexpr bool isMap = false;
+	static constexpr bool isMulti	= _isMulti;
+	static constexpr bool isMap		= false;
 
 	static const key_type& key_from_node(const value_type& val) {
 		return val;
@@ -1446,24 +1446,4 @@ using AVLTree = _AVLTree<_TreeTraits<T, T, Comp, false>>;
 
 template<class T, class Comp = std::less<>>
 using AVLMultiTree = _AVLTree<_TreeTraits<T, T, Comp, true>>;
-
-//template<class T, class Comp = std::less<T>>
-//class Set : public _AVLTree<_TreeTraits<T, T, Comp, false>> {
-//
-//};
-//
-//template<class T, class Comp = std::less<T>>
-//class MultiSet : public _AVLTree<_TreeTraits<T, T, Comp, true>> {
-//
-//};
-
-//template<class Key, class T, class Comp = std::less<>>
-//class Map : public _AVLTree<_TreeMapTraits<Key, T, Comp, false>> {
-//
-//};
-//
-//template<class Key, class T, class Comp = std::less<>>
-//class MultiMap : public _AVLTree<_TreeMapTraits<Key, T, Comp, true>> {
-//
-//};
 #endif // ALV_TREE_H
