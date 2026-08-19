@@ -1,4 +1,6 @@
 #include<forward_list>
+#include<map>
+#include<queue>
 #include<set>
 #include<vector>
 
@@ -49,7 +51,7 @@ int main() {
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
 
 	{
-		AVLTree<Int, IntCompare> tree;
+		AVLTree<Int, Int, IntCompare> tree;
 		for (const auto& val : data) {
 			std::cout << "Inserting " << val << "\n";
 			tree.emplace(val);
@@ -60,7 +62,7 @@ int main() {
 			std::cout << "Correct\n";
 		}
 
-		AVLTree<Int, IntCompare> tree2;
+		AVLTree<Int, Int, IntCompare> tree2;
 		tree2.insert(data2.begin(), data2.end());
 		tree2.level_order();
 		std::cout << "\n\n";
