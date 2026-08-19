@@ -151,18 +151,15 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="include\a.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\a.h" />
     <ClInclude Include="include\avl_tree.h" />
     <ClInclude Include="include\dynamic_array.h" />
     <ClInclude Include="include\forward_list.h" />
     <ClInclude Include="include\map.h" />
     <ClInclude Include="include\node_handle.h" />
     <ClInclude Include="include\set.h" />
-    <ClInclude Include="include\tree_common.h" />
     <ClInclude Include="common.h" />
     <ClInclude Include="map.h" />
     <ClInclude Include="tests.h" />
