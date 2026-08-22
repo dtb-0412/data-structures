@@ -21,7 +21,7 @@ public:
 		std::cout << "Type(const Type(" << data << ")&)\n";
 	}
 
-	Type(Type&& other)
+	Type(Type&& other) noexcept
 		: data(std::move(other.data)) {
 		std::cout << "Type(Type(" << data << ")&&)\n";
 	}

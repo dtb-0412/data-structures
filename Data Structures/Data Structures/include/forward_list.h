@@ -6,7 +6,7 @@
 #include"memory.hpp"
 
 template<class FwdListVal>
-class ForwardListConstIterator {
+class _ForwardListConstIterator {
 private:
 	using _NodePointer = typename FwdListVal::node_pointer;
 
@@ -18,10 +18,10 @@ public:
 	using pointer			= typename FwdListVal::const_pointer;
 	using reference			= const value_type&;
 
-	ForwardListConstIterator() noexcept
+	_ForwardListConstIterator() noexcept
 		: ptr() {}
 
-	ForwardListConstIterator(_NodePointer ptr) noexcept
+	_ForwardListConstIterator(_NodePointer ptr) noexcept
 		: ptr(ptr) {}
 
 	[[nodiscard]] reference operator*() const noexcept {
@@ -32,22 +32,22 @@ public:
 		return static_cast<pointer>(std::addressof(**this));
 	}
 
-	ForwardListConstIterator& operator++() noexcept {
+	_ForwardListConstIterator& operator++() noexcept {
 		ptr = ptr->next;
 		return *this;
 	}
 
-	ForwardListConstIterator operator++(int) noexcept {
-		ForwardListConstIterator temp = *this;
+	_ForwardListConstIterator operator++(int) noexcept {
+		_ForwardListConstIterator temp = *this;
 		ptr = ptr->next;
 		return temp;
 	}
 
-	[[nodiscard]] bool operator==(const ForwardListConstIterator& rhs) const noexcept {
+	[[nodiscard]] bool operator==(const _ForwardListConstIterator& rhs) const noexcept {
 		return ptr == rhs.ptr;
 	}
 
-	[[nodiscard]] bool operator!=(const ForwardListConstIterator& rhs) const noexcept {
+	[[nodiscard]] bool operator!=(const _ForwardListConstIterator& rhs) const noexcept {
 		return !(*this == rhs);
 	}
 
@@ -56,9 +56,9 @@ public:
 };
 
 template<class FwdListVal>
-class ForwardListIterator : public ForwardListConstIterator<FwdListVal> {
+class _ForwardListIterator : public _ForwardListConstIterator<FwdListVal> {
 private:
-	using _BaseIter	= ForwardListConstIterator<FwdListVal>;
+	using _BaseIter	= _ForwardListConstIterator<FwdListVal>;
 	using _BaseIter::_BaseIter;
 
 public:
@@ -77,32 +77,32 @@ public:
 		return static_cast<pointer>(std::addressof(**this));
 	}
 
-	ForwardListIterator& operator++() noexcept {
+	_ForwardListIterator& operator++() noexcept {
 		_BaseIter::operator++();
 		return *this;
 	}
 
-	ForwardListIterator operator++(int) noexcept {
-		ForwardListIterator temp = *this;
+	_ForwardListIterator operator++(int) noexcept {
+		_ForwardListIterator temp = *this;
 		_BaseIter::operator++();
 		return temp;
 	}
 };
 
 template<class ValueT>
-struct ForwardListNode {
-	using node_pointer	= ForwardListNode*;
+struct _ForwardListNode {
+	using node_pointer	= _ForwardListNode*;
 	using value_type	= ValueT;
 
-	ForwardListNode() = default;
+	_ForwardListNode() = default;
 
-	ForwardListNode(const ForwardListNode&)				= delete;
-	ForwardListNode& operator=(const ForwardListNode&)	= delete;
+	_ForwardListNode(const _ForwardListNode&)				= delete;
+	_ForwardListNode& operator=(const _ForwardListNode&)	= delete;
 
 	static void free_node(node_pointer node) noexcept {
 		memory::destruct_at(std::addressof(node->next));
 		memory::destruct_at(std::addressof(node->value));
-		memory::deallocate(node, sizeof(ForwardListNode));
+		memory::deallocate(node, sizeof(_ForwardListNode));
 	}
 
 	node_pointer	next;	// Member next MUST come first.
@@ -110,7 +110,7 @@ struct ForwardListNode {
 };
 
 template<class ValueT, class SizeT, class DiffT, class Ptr, class ConstPtr, class NodeT>
-class ForwardListValue {
+class _ForwardListValue {
 public:
 	using node_type			= NodeT;
 	using node_pointer		= typename node_type::node_pointer;
@@ -122,7 +122,7 @@ public:
 	using const_pointer		= ConstPtr;
 
 public:
-	ForwardListValue() noexcept
+	_ForwardListValue() noexcept
 		: head() {}
 
 	[[nodiscard]] node_pointer before_head() const noexcept {
@@ -153,12 +153,157 @@ public:
 		}
 	}
 
-	void swap(ForwardListValue& other) noexcept {
+	void swap(_ForwardListValue& other) noexcept {
 		using std::swap;
 		swap(head, other.head);
 	}
 
 	node_pointer head;
+};
+
+template<class NodeT>
+struct _ForwardListInsertGuard {
+	using node_type		= NodeT;
+	using node_pointer	= typename node_type::node_pointer;
+
+	// Guard for list insertion failure
+	_ForwardListInsertGuard() noexcept
+		: head(), tail() {}
+
+	_ForwardListInsertGuard(const _ForwardListInsertGuard&)				= delete;
+	_ForwardListInsertGuard& operator=(const _ForwardListInsertGuard&)	= delete;
+
+	~_ForwardListInsertGuard() {
+		if (tail == node_pointer{}) {
+			return;
+		}
+
+		memory::construct_at(std::addressof(tail->next), node_pointer{});
+		while (head) {
+			node_type::free_node(std::exchange(head, head->next));
+		}
+	}
+
+	template<class... Args>
+	void append_n(std::size_t count, const Args&... args) {
+		// Append count elements by constructing in place using args
+		if (count == 0) {
+			return;
+		}
+
+		memory::_NodeAllocateGuard<node_type> guard;
+		if (tail == node_pointer{}) {
+			guard.allocate();
+			memory::construct_at(std::addressof(guard.node->value), args...);
+			head = guard.node;
+			tail = guard.node;
+			--count;
+		}
+
+		for (; 0 < count; --count) {
+			guard.allocate();
+			memory::construct_at(std::addressof(guard.node->value), args...);
+			memory::construct_at(std::addressof(tail->next), guard.node);
+			tail = guard.node;
+		}
+		(void)guard.release();
+	}
+
+	template<class It, class Se>
+	void append_range(It first, Se last) {
+		// Append range [first, last)
+		if (first == last) {
+			return;
+		}
+
+		memory::_NodeAllocateGuard<node_type> guard;
+		if (tail == node_pointer{}) {
+			guard.allocate();
+			memory::construct_at(std::addressof(guard.node->value), *first);
+
+			const auto newHead = guard.release();
+			head = newHead;
+			tail = newHead;
+			++first;
+		}
+
+		for (; first != last; ++first) {
+			guard.allocate();
+			memory::construct_at(std::addressof(guard.node->value), *first);
+
+			const auto newTail = guard.release();
+			memory::construct_at(std::addressof(tail->next), newTail);
+			tail = newTail;
+		}
+	}
+
+	node_pointer attach_after(node_pointer node) noexcept {
+		// Attach elements in *this after node, reset *this to default-initialized state
+		const node_pointer oldTail = tail;
+		if (oldTail == node_pointer{}) {
+			return node;
+		}
+
+		memory::construct_at(std::addressof(oldTail->next), node->next);
+		node->next = head;
+		tail = node_pointer{};
+
+		return oldTail;
+	}
+
+	node_pointer head; // Points to the first constructed node
+	node_pointer tail; // Points to the most recently constructed node
+};
+
+template<class NodeT>
+struct _ForwardListRemoveGuard {
+	/*
+	This serves 2 purposes:
+		1. RAII guard for list remove failure
+		2. Queue for nodes waiting to be removed
+
+	Instead of removing nodes while iterating, we queue them up and remove them all at once.
+
+	Predicates for removal could be stateful, capturing references to other elements in the list,
+	including ones that would be removed. Destructing nodes immediately after matching could invalidate
+	the predicate's captured references, leading to undefined behavior.
+	*/
+	using node_type		= NodeT;
+	using node_pointer	= typename node_type::node_pointer;
+
+	_ForwardListRemoveGuard() noexcept
+		: head(), tail(std::addressof(head)) {
+	}
+
+	_ForwardListRemoveGuard(const _ForwardListRemoveGuard&)				= delete;
+	_ForwardListRemoveGuard& operator=(const _ForwardListRemoveGuard&)	= delete;
+
+	~_ForwardListRemoveGuard() {
+		node_pointer subject = head;
+		while (subject) {
+			const node_pointer nextNode = subject->next;
+			memory::destruct_at(std::addressof(subject->next));
+			memory::destruct_at(std::addressof(subject->value));
+			memory::deallocate(subject, sizeof(node_type));
+			subject = nextNode;
+		}
+	}
+
+	node_pointer extract_after(node_pointer prevNode) noexcept {
+		// Extract node after prevNode from the list and add it to the remove queue
+		const node_pointer removed	= prevNode->next;
+		const node_pointer nextNode = removed->next;
+
+		removed->next = nullptr;
+		prevNode->next = nextNode;
+
+		*tail	= removed;
+		tail	= std::addressof(removed->next);
+		return nextNode;
+	}
+
+	node_pointer head;
+	node_pointer* tail;
 };
 
 template<class T>
@@ -173,150 +318,14 @@ public:
 	using const_reference	= const T&;
 
 private:
-	using _NodeType		= ForwardListNode<T>;
+	using _NodeType		= _ForwardListNode<T>;
 	using _NodePointer	= typename _NodeType::node_pointer;
 
-	using _FwdListValue	= ForwardListValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
-
-	struct ForwardListInsertGuard {
-		// Guard for list insertion failure
-		ForwardListInsertGuard() noexcept
-			: head(), tail() {}
-
-		ForwardListInsertGuard(const ForwardListInsertGuard&)				= delete;
-		ForwardListInsertGuard& operator=(const ForwardListInsertGuard&)	= delete;
-
-		~ForwardListInsertGuard() {
-			if (tail == _NodePointer{}) {
-				return;
-			}
-
-			memory::construct_at(std::addressof(tail->next), _NodePointer{});
-			while (head) {
-				_NodeType::free_node(std::exchange(head, head->next));
-			}
-		}
-
-		template<class... Args>
-		void append_n(size_type count, const Args&... args) {
-			// Append count elements by constructing in place using args
-			if (count == 0) {
-				return;
-			}
-
-			memory::_NodeAllocateGuard<_NodeType> guard;
-			if (tail == _NodePointer{}) {
-				guard.allocate();
-				memory::construct_at(std::addressof(guard.node->value), args...);
-				head = guard.node;
-				tail = guard.node;
-				--count;
-			}
-
-			for (; 0 < count; --count) {
-				guard.allocate();
-				memory::construct_at(std::addressof(guard.node->value), args...); 
-				memory::construct_at(std::addressof(tail->next), guard.node);
-				tail = guard.node;
-			}
-			(void) guard.release();
-		}
-
-		template<class It, class Se>
-		void append_range(It first, Se last) {
-			// Append range [first, last)
-			if (first == last) {
-				return;
-			}
-
-			memory::_NodeAllocateGuard<_NodeType> guard;
-			if (tail == _NodePointer{}) {
-				guard.allocate();
-				memory::construct_at(std::addressof(guard.node->value), *first);
-
-				const auto newHead = guard.release();
-				head = newHead;
-				tail = newHead;
-				++first;
-			}
-
-			for (; first != last; ++first) {
-				guard.allocate();
-				memory::construct_at(std::addressof(guard.node->value), *first);
-
-				const auto newTail = guard.release();
-				memory::construct_at(std::addressof(tail->next), newTail);
-				tail = newTail;
-			}
-		}
-
-		_NodePointer attach_after(_NodePointer node) noexcept {
-			// Attach elements in *this after node, reset *this to default-initialized state
-			const _NodePointer oldTail = tail;
-			if (oldTail == _NodePointer{}) {
-				return node;
-			}
-
-			memory::construct_at(std::addressof(oldTail->next), node->next);
-			node->next = head;
-			tail = _NodePointer{};
-
-			return oldTail;
-		}
-
-		_NodePointer head; // Points to the first constructed node
-		_NodePointer tail; // Points to the most recently constructed node
-	};
-
-	struct ForwardListRemoveGuard {
-		/*
-		This serves 2 purposes:
-			1. RAII guard for list remove failure
-			2. Queue for nodes waiting to be removed
-		
-		Instead of removing nodes while iterating, we queue them up and remove them all at once.
-		
-		Predicates for removal could be stateful, capturing references to other elements in the list,
-		including ones that would be removed. Destructing nodes immediately after matching could invalidate
-		the predicate's captured references, leading to undefined behavior.
-		*/
-		ForwardListRemoveGuard() noexcept
-			: head(), tail(std::addressof(head)) {}
-
-		ForwardListRemoveGuard(const ForwardListRemoveGuard&)				= delete;
-		ForwardListRemoveGuard& operator=(const ForwardListRemoveGuard&)	= delete;
-
-		~ForwardListRemoveGuard() {
-			_NodePointer subject = head;
-			while (subject) {
-				const _NodePointer nextNode = subject->next;
-				memory::destruct_at(std::addressof(subject->next));
-				memory::destruct_at(std::addressof(subject->value));
-				memory::deallocate(subject, sizeof(_NodeType));
-				subject = nextNode;
-			}
-		}
-
-		_NodePointer extract_after( _NodePointer prevNode) noexcept {
-			// Extract node after prevNode from the list and add it to the remove queue
-			const _NodePointer removed	= prevNode->next;
-			const _NodePointer nextNode = removed->next;
-
-			removed->next	= nullptr;
-			prevNode->next	= nextNode;
-
-			*tail	= removed;
-			tail	= std::addressof(removed->next);
-			return nextNode;
-		}
-
-		_NodePointer head;
-		_NodePointer* tail;
-	};
+	using _MyVal		= _ForwardListValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
 
 public:
-	using iterator			= ForwardListIterator<_FwdListValue>;
-	using const_iterator	= ForwardListConstIterator<_FwdListValue>;
+	using iterator			= _ForwardListIterator<_MyVal>;
+	using const_iterator	= _ForwardListConstIterator<_MyVal>;
 
 public:
 	ForwardList() noexcept
@@ -352,7 +361,7 @@ public:
 
 	ForwardList(ForwardList&& other) noexcept
 		: _data() {
-		_data.head = std::exchange(other._data.head, nullptr);
+		_data.swap(other._data);
 	}
 
 	~ForwardList() noexcept {
@@ -476,7 +485,7 @@ public:
 	iterator insert_after(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val after where
 		if (count != 0) {
-			ForwardListInsertGuard guard;
+			_ForwardListInsertGuard<_NodeType> guard;
 			guard.append_n(count, val);
 			return iterator(guard.attach_after(where.ptr));
 		}
@@ -488,7 +497,7 @@ public:
 	iterator insert_after(const_iterator where, It first, It last) {
 		// Insert range [first, last) after where
 		if (first != last) {
-			ForwardListInsertGuard guard;
+			_ForwardListInsertGuard<_NodeType> guard;
 			guard.append_range(std::move(first), std::move(last));
 			return iterator(guard.attach_after(where.ptr));
 		}
@@ -664,7 +673,7 @@ private:
 	template<class... Args>
 	void _construct_n(const size_type count, Args&&... args) {
 		// Construct list using args
-		ForwardListInsertGuard guard;
+		_ForwardListInsertGuard<_NodeType> guard;
 		if constexpr (sizeof...(Args) == 0) {
 			guard.append_n(count);
 		}
@@ -698,7 +707,7 @@ private:
 			const _NodePointer nextNode = currNode->next;
 			if (!nextNode) {
 				// Runs out of nodes, insert the remaining nodes to *this
-				ForwardListInsertGuard guard;
+				_ForwardListInsertGuard<_NodeType> guard;
 				guard.append_range(first, last);
 				guard.attach_after(currNode);
 				return;
@@ -773,7 +782,7 @@ private:
 			return 0;
 		}
 
-		ForwardListRemoveGuard guard;
+		_ForwardListRemoveGuard<_NodeType> guard;
 
 		size_type removed = 0;
 		for (_NodePointer currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
@@ -796,7 +805,7 @@ private:
 			return 0;
 		}
 
-		ForwardListRemoveGuard guard;
+		_ForwardListRemoveGuard<_NodeType> guard;
 
 		size_type removed = 0;
 		for (_NodePointer currNode = first.ptr, nextNode = currNode->next; nextNode != last.ptr;) {
@@ -972,7 +981,7 @@ private:
 	}
 
 private:
-	_FwdListValue _data;
+	_MyVal _data;
 };
 
 template<class T>

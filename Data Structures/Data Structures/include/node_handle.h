@@ -4,11 +4,11 @@
 
 #include"avl_tree.h"
 
-template<class It, class NodeHdl>
+template<class It, class NodeHndl>
 struct _InsertReturnType {
-	It		position;	// Inserted node iterator if inserted, otherwise the duplicate node iterator
-	bool	inserted;	// Whether insertion took place
-	NodeHdl	node;		// Node handle: Empty if inserted, otherwise contains the node that was not inserted
+	It			position;	// Inserted node iterator if inserted, otherwise the duplicate node iterator
+	bool		inserted;	// Whether insertion took place
+	NodeHndl	node;		// Node handle: Empty if inserted, otherwise contains the node that was not inserted
 };
 
 template<class DerivedT, class T>
@@ -47,11 +47,11 @@ private:
 	considered UB by the standards.
 	On MSVC compiler, reinterpret_cast between 2 layouts with the same size/alignment is practically safe.
 	*/
-	using _MutableKeyPair = std::pair<key_type, mapped_type>;
-	_MutableKeyPair& _get_mutable_pair() const {
+	using _MutablePair = std::pair<key_type, mapped_type>;
+	_MutablePair& _get_mutable_pair() const {
 		const auto& self = static_cast<const DerivedT&>(*this);
 		auto& data = self.get_pointer()->value;
-		return reinterpret_cast<_MutableKeyPair&>(data);
+		return reinterpret_cast<_MutablePair&>(data);
 	}
 };
 
@@ -62,8 +62,8 @@ CRTP is used to support static polymorphism instead of virtual functions because
 	- Virtual functions violates zero-overhead principle, adding extra footprint to every instance.
 	- Virtual functions requires virtual destructor, introducing more runtime dispatch overhead.
 */
-template<class NodeT, template<class...> class Base, class... Types>
-class _NodeHandle : public Base<_NodeHandle<NodeT, Base, Types...>, Types...> {
+template<template<class...> class Base, class NodeT, class... Types>
+class _NodeHandle : public Base<_NodeHandle<Base, NodeT, Types...>, Types...> {
 private:
 	using _NodePointer = typename NodeT::node_pointer;
 	

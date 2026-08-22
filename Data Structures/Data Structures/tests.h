@@ -1,8 +1,7 @@
 #pragma once
 
 #include<vector>
-#include<set>
-#include<map>
+#include<forward_list>
 
 #include"./include/avl_tree.h"
 #include"./include/dynamic_array.h"
@@ -11,7 +10,6 @@
 #include"./include/set.h"
 #include"common.h"
 #include"printer.hpp"
-#include"memory.hpp"
 
 void avl_tree_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });

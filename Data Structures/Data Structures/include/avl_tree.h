@@ -7,7 +7,7 @@
 
 #include"compare.hpp"
 #include"memory.hpp"
-#include"node_handle.h"
+#include"tree_traits.h"
 
 template<class AVLTreeVal>
 class _AVLTreeConstIterator {
@@ -146,12 +146,13 @@ public:
 	}
 };
 
-template<class ValueT, class HeightT, class BalanceT>
+template<class ValueT>
 struct _AVLTreeNode {
 	using node_pointer	= _AVLTreeNode*;
 	using value_type	= ValueT;
-	using height_type	= HeightT;
-	using balance_type	= BalanceT;
+
+	using height_type	= uint8_t;
+	using balance_type	= int8_t;
 
 	_AVLTreeNode() = default;
 
@@ -227,8 +228,10 @@ struct _AVLTreeNode {
 	bool isNil; // 1 byte boolean, whether node is head sentinel or child of leaf nodes
 };
 
-enum _NodeChild : bool {
-	LEFT, RIGHT, UNUSED
+enum class _NodeChild {
+	LEFT,
+	RIGHT,
+	UNUSED
 };
 
 template<class NodePtr>
@@ -611,8 +614,8 @@ public:
 	using const_reference	= const value_type&;
 
 protected:
-	using _NodeType		= _AVLTreeNode<value_type, uint8_t, int8_t>;
-	using _NodePointer	= typename _NodeType::node_pointer;
+	using _NodeType		= typename Traits::node_type;
+	using _NodePointer	= typename Traits::node_pointer;
 
 	using _MyVal		= _AVLTreeValue<value_type, size_type, difference_type, pointer, const_pointer, _NodeType>;
 
@@ -1569,58 +1572,12 @@ private:
 
 private:
 	_MyVal		_data;
-	key_compare	_comp;
-};
-
-template<class KeyT, class... Args>
-struct _InPlaceKeyExtractorBase {
-	// By default we can't extract the key in the emplace family and must construct a node we might not use
-	static constexpr bool isExtractable = false;
-};
-
-template<class KeyT>
-struct _InPlaceKeyExtractorBase<KeyT, KeyT> {
-	static constexpr bool isExtractable = true;
-
-	static const KeyT& extract(const KeyT& key) noexcept {
-		return key;
-	}
-};
-
-template<class... Args>
-using _InPlaceKeyExtractor = _InPlaceKeyExtractorBase<std::remove_cvref_t<Args>...>;
-
-template<
-	class KeyT,
-	class T,
-	class Comp,
-	bool _isMulti
->
-class _TreeTraits {
-public:
-	using key_type		= KeyT;
-	using value_type	= T;
-	using key_compare	= Comp;
-	using value_compare = key_compare;
-
-	using node_handle = _NodeHandle<
-		_AVLTreeNode<value_type, uint8_t, int8_t>, _NodeHandleBase, key_type
-	>;
-
-	static constexpr bool isMulti	= _isMulti;
-	static constexpr bool isMap		= false;
-
-	template<class... Args>
-	using in_place_key_extractor = _InPlaceKeyExtractor<key_type, Args...>;
-
-	static const key_type& key_from_node(const value_type& val) {
-		return val;
-	}
+	key_compare	_comp; // Key comparator for keeping order
 };
 
 template<class T, class Comp = std::less<>>
-using AVLTree = _AVLTree<_TreeTraits<T, T, Comp, false>>;
+using AVLTree = _AVLTree<_TreeTraits<T, T, Comp, _AVLTreeNode, false>>;
 
 template<class T, class Comp = std::less<>>
-using AVLMultiTree = _AVLTree<_TreeTraits<T, T, Comp, true>>;
+using AVLMultiTree = _AVLTree<_TreeTraits<T, T, Comp, _AVLTreeNode, true>>;
 #endif // ALV_TREE_H
