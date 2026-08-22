@@ -20,16 +20,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\avl_tree.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="include\dynamic_array.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\forward_list.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\node_handle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\set.h">
@@ -44,7 +38,13 @@
     <ClInclude Include="include\map.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\tree_traits.h">
+    <ClInclude Include="include\tree_core.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\avl_tree.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\rb_tree.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

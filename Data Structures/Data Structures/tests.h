@@ -14,18 +14,20 @@
 #include"common.h"
 #include"printer.hpp"
 
+#define TYPE Type<int>
+#define COMP TypeCompare
+
 void avl_tree_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
 
 	{
-		AVLTree<Type<int>, TypeCompare> tree;
+		AVLTree<TYPE, COMP> tree;
 		for (const auto& val : data) {
-			std::cout << "Inserting " << val << "\n";
-			tree.emplace(Type<int>(val));
+			tree.emplace_hint(tree.end(), TYPE(val));
 		}
 
-		AVLTree<Type<int>, TypeCompare> tree2;
+		AVLTree<TYPE, COMP> tree2;
 		tree2.insert(data2.begin(), data2.end());
 		tree2.level_order();
 		std::cout << "\n\n";
@@ -107,6 +109,43 @@ void forward_list_test() {
 	std::cin.get();
 }
 
-void set_test() {
+void map_test() {
 
+}
+
+void rb_tree_test() {
+
+}
+
+void set_test() {
+	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
+	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
+
+	{
+		Set<TYPE, COMP> set;
+		for (const auto& val : data) {
+			set.emplace(TYPE(val));
+		}
+
+		Set<TYPE, COMP> set2;
+		set2.insert(data2.begin(), data2.end());
+		set2.level_order();
+		std::cout << "\n\n";
+
+		set.merge(set2);
+
+		printer::Printer printer;
+		printer.sep(", ").alt("Empty\n");
+		printer
+			.prompt("set1: ")
+			.print_range(set.begin(), set.end());
+
+		printer
+			.prompt("set2: ")
+			.print_range(set2.begin(), set2.end());
+		set.level_order();
+	}
+
+	std::cout << "\nPress any key to exit...";
+	std::cin.get();
 }
