@@ -48,6 +48,7 @@ private:
 	On MSVC compiler, reinterpret_cast between 2 layouts with the same size/alignment is practically safe.
 	*/
 	using _MutablePair = std::pair<key_type, mapped_type>;
+
 	_MutablePair& _get_mutable_pair() const {
 		const auto& self = static_cast<const DerivedT&>(*this);
 		auto& data = self.get_pointer()->value;

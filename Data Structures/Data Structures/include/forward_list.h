@@ -983,6 +983,8 @@ template<class T>
 
 template<class T>
 [[nodiscard]] compare::SynthThreeWayCompareResult<T> operator<=>(const ForwardList<T>& lhs, const ForwardList<T>& rhs) {
-	return std::lexicographical_compare_three_way(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{});
+	return std::lexicographical_compare_three_way(
+		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{}
+	);
 }
 #endif // FORWARD_LIST_H

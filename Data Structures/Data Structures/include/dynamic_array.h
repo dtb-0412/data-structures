@@ -1294,22 +1294,22 @@ private:
 };
 
 template<class T>
+constexpr void swap(DynamicArray<T>& lhs, DynamicArray<T>& rhs) noexcept {
+	lhs.swap(rhs);
+}
+
+template<class T>
 [[nodiscard]] constexpr bool operator==(const DynamicArray<T>& lhs, const DynamicArray<T>& rhs) {
-	if (lhs.size() != rhs.size()) {
-		return false;
-	}
-	return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+	return lhs.size() == rhs.size() &&
+		std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
 }
 
 template<class T>
 [[nodiscard]] constexpr compare::SynthThreeWayCompareResult<T> operator<=>(
 	const DynamicArray<T>& lhs, const DynamicArray<T>& rhs
 ) {
-	return std::lexicographical_compare_three_way(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{});
-}
-
-template<class T>
-constexpr void swap(DynamicArray<T>& lhs, DynamicArray<T>& rhs) noexcept {
-	lhs.swap(rhs);
+	return std::lexicographical_compare_three_way(
+		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{}
+	);
 }
 #endif // DYNAMIC_ARRAY_H

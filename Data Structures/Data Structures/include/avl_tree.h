@@ -1593,6 +1593,26 @@ private:
 	key_compare	_comp; // Key comparator for keeping order
 };
 
+template<class Traits>
+void swap(_AVLTree<Traits>& lhs, _AVLTree<Traits>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
+	lhs.swap(rhs);
+}
+
+template<class Traits>
+[[nodiscard]] bool operator==(const _AVLTree<Traits>& lhs, const _AVLTree<Traits>& rhs) {
+	return lhs.size() == rhs.size() &&
+		std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+}
+
+template<class Traits>
+[[nodiscard]] compare::SynthThreeWayCompareResult<typename Traits::value_type> operator<=>(
+	const _AVLTree<Traits>& lhs, const _AVLTree<Traits>& rhs
+) {
+	return std::lexicographical_compare_three_way(
+		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompareResult<typename Traits::value_type>{}
+	);
+}
+
 template<class T, class Comp = std::less<>>
 using AVLTree = _AVLTree<_TreeTraits<T, T, Comp, _AVLTreeNode, false>>;
 
