@@ -333,30 +333,38 @@ public:
 
 	explicit ForwardList(const size_type count)
 		: _data() {
-		this->_construct_n(count);
+		_ForwardListInsertGuard<_NodeType> guard;
+		guard.append_n(count);
+		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(const size_type count, const T& val)
 		: _data() {
-		this->_construct_n(count, val);
+		_ForwardListInsertGuard<_NodeType> guard;
+		guard.append_n(count, val);
+		guard.attach_after(_data.before_head());
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	ForwardList(It first, It last)
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	ForwardList(It first, Se last)
 		: _data() {
-		const auto count = static_cast<size_type>(std::distance(first, last));
-		this->_construct_n(count, std::move(first), std::move(last));
+		_ForwardListInsertGuard<_NodeType> guard;
+		guard.append_range(std::move(first), std::move(last));
+		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(std::initializer_list<T> initList)
 		: _data() {
-		this->_construct_n(initList.size(), initList.begin(), initList.end());
+		_ForwardListInsertGuard<_NodeType> guard;
+		guard.append_range(initList.begin(), initList.end());
+		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(const ForwardList& other)
 		: _data() {
-		this->_construct_n(other.size(), other.begin(), other.end());
+		_ForwardListInsertGuard<_NodeType> guard;
+		guard.append_range(other.begin(), other.end());
+		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(ForwardList&& other) noexcept
@@ -492,8 +500,7 @@ public:
 		return iterator(where.ptr);
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
+	template<std::input_iterator It, std::sentinel_for<It> Se>
 	iterator insert_after(const_iterator where, It first, It last) {
 		// Insert range [first, last) after where
 		if (first != last) {
@@ -515,9 +522,8 @@ public:
 		this->insert_after(this->before_begin(), count, val);
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	void assign(It first, It last) {
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	void assign(It first, Se last) {
 		// Assign range [first, last)
 		this->_assign_range(std::move(first), std::move(last));
 	}
@@ -670,25 +676,6 @@ public:
 	}
 
 private:
-	template<class... Args>
-	void _construct_n(const size_type count, Args&&... args) {
-		// Construct list using args
-		_ForwardListInsertGuard<_NodeType> guard;
-		if constexpr (sizeof...(Args) == 0) {
-			guard.append_n(count);
-		}
-		else if constexpr (sizeof...(Args) == 1) {
-			guard.append_n(count, args...);
-		}
-		else if constexpr (sizeof...(Args) == 2) {
-			guard.append_range(std::forward<Args>(args)...);
-		}
-		else {
-			static_assert(false, "Unexpected number of arguments");
-		}
-		guard.attach_after(_data.before_head());
-	}
-
 	template<class... Args>
 	void _insert_after(_NodePointer node, Args&&... args) {
 		// Insert after node by perfect forwarding args

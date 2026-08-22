@@ -1,7 +1,10 @@
 #pragma once
 
-#include<vector>
 #include<forward_list>
+#include<map>
+#include<set>
+#include<stack>
+#include<vector>
 
 #include"./include/avl_tree.h"
 #include"./include/dynamic_array.h"

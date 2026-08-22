@@ -371,9 +371,8 @@ public:
 		this->_construct_n(count, val);
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	constexpr DynamicArray(It first, It last)
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	constexpr DynamicArray(It first, Se last)
 		: _data() {
 		if constexpr (std::forward_iterator<It>) {
 			const auto count = static_cast<size_type>(std::distance(first, last));
@@ -671,9 +670,8 @@ public:
 		return iterator(_data.first + offset); // Initial posPtr is invalidated
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	constexpr iterator insert(const_iterator pos, It first, It last) {
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	constexpr iterator insert(const_iterator pos, It first, Se last) {
 		// Insert range [first, last) at pos
 		const auto offset = static_cast<size_type>(pos.ptr - _data.first);
 		if constexpr (std::forward_iterator<It>) {
@@ -717,9 +715,8 @@ public:
 		}
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	constexpr void assign(It first, It last) {
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	constexpr void assign(It first, Se last) {
 		// Assign range [first, last)
 		if constexpr (std::forward_iterator<It>) {
 			const auto count = static_cast<size_type>(std::distance(first, last));

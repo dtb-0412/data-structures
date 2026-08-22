@@ -642,11 +642,23 @@ public:
 		: _data(), _comp() {
 		_data.head = _NodeType::construct_head();
 	}
-	
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	_AVLTree(It first, It last)
+
+	_AVLTree(const key_compare& comp)
+		: _data(), _comp(comp) {
+		_data.head = _NodeType::construct_head();
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	_AVLTree(It first, Se last)
 		: _data(), _comp() {
+		_TreeConstructGuard<_MyVal> guard(_data);
+		this->insert(first, last);
+		guard.release();
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	_AVLTree(It first, Se last, const key_compare& comp)
+		: _data(), _comp(comp) {
 		_TreeConstructGuard<_MyVal> guard(_data);
 		this->insert(first, last);
 		guard.release();
@@ -654,6 +666,13 @@ public:
 
 	_AVLTree(std::initializer_list<value_type> initList)
 		: _data(), _comp() {
+		_TreeConstructGuard<_MyVal> guard(_data);
+		this->insert(initList);
+		guard.release();
+	}
+
+	_AVLTree(std::initializer_list<value_type> initList, const key_compare& comp)
+		: _data(), _comp(comp) {
 		_TreeConstructGuard<_MyVal> guard(_data);
 		this->insert(initList);
 		guard.release();
@@ -840,9 +859,8 @@ public:
 		return iterator(this->_emplace_hint(hint.ptr, std::move(val)));
 	}
 
-	template<std::input_iterator It>
-		requires std::sentinel_for<It, It>
-	void insert(It first, It last) {
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	void insert(It first, Se last) {
 		// Insert range [first, last)
 		for (; first != last; ++first) {
 			this->_emplace_hint(_data.head, *first);
