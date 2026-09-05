@@ -2,6 +2,7 @@
 #ifndef TREE_BODY_H
 #define TREE_BODY_H
 
+#include<iomanip>
 #include<iostream>
 #include<queue>
 
@@ -39,8 +40,7 @@ private:
 	using _NodePointer = typename NodeT::node_pointer;
 
 	_NodeHandle(_NodePointer ptr) noexcept
-		: _ptr(ptr) {
-	}
+		: _ptr(ptr) {}
 
 public:
 	template<class, template<class...> class>
@@ -358,6 +358,26 @@ struct _BSTreeNode {
 		free_empty_node(node);
 	}
 
+	void replace_child(node_pointer oldChild, node_pointer newChild) noexcept {
+		// If oldChild and *this are parent and child, replace oldChild with newChild
+		if (isNil) {
+			parent = newChild;
+		}
+		else if (oldChild == left) {
+			left = newChild;
+		}
+		else if (oldChild == right) {
+			right = newChild;
+		}
+		else {
+			return;
+		}
+
+		if (newChild) {
+			newChild->parent = oldChild->parent;
+		}
+	}
+
 	node_pointer left;		// 8 bytes pointer
 	node_pointer right;		// 8 bytes pointer
 	node_pointer parent;	// 8 bytes pointer
@@ -397,6 +417,40 @@ public:
 			node = node->right;
 		}
 		return node;
+	}
+
+	void rotate_left(node_pointer oldRoot) noexcept {
+		// Perform counter-clockwise rotation on subtree at oldRoot
+		const node_pointer parent	= oldRoot->parent;
+		const node_pointer newRoot	= oldRoot->right;
+		const node_pointer child	= newRoot->left;
+
+		parent->replace_child(oldRoot, newRoot);
+
+		oldRoot->parent = newRoot;
+		oldRoot->right	= child;
+		newRoot->left	= oldRoot;
+
+		if (!child->isNil) {
+			child->parent = oldRoot;
+		}
+	}
+
+	void rotate_right(node_pointer oldRoot) noexcept {
+		// Perform clockwise rotation on subtree at oldRoot
+		const node_pointer parent	= oldRoot->parent;
+		const node_pointer newRoot	= oldRoot->left;
+		const node_pointer child	= newRoot->right;
+
+		parent->replace_child(oldRoot, newRoot);
+
+		oldRoot->parent = newRoot;
+		oldRoot->left	= child;
+		newRoot->right	= oldRoot;
+
+		if (!child->isNil) { // Reattach newRoot's right child to oldRoot
+			child->parent = oldRoot;
+		}
 	}
 
 	void clear_subtree(node_pointer node) noexcept {
@@ -862,14 +916,14 @@ public:
 
 	[[nodiscard]] bool contains(const key_type& key) const {
 		// Check if tree contains key
-		return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
+		return this->_is_lower_bound_duplicate(this->_find_lower_bound(key).bound, key);
 	}
 
 	template<class KeyT>
 		requires requires { typename key_compare::is_transparent; }
 	[[nodiscard]] bool contains(const KeyT& key) const {
 		// Check if tree contains element equivalent to key
-		return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
+		return this->_is_lower_bound_duplicate(this->_find_lower_bound(key).bound, key);
 	}
 
 	[[nodiscard]] size_type count(const key_type& key) const {
@@ -881,7 +935,7 @@ public:
 			));
 		}
 		else {
-			return this->_is_duplicate_key(this->_find_lower_bound(key).bound, key);
+			return this->_is_lower_bound_duplicate(this->_find_lower_bound(key).bound, key);
 		}
 	}
 
@@ -995,20 +1049,18 @@ public:
 			}
 			else {
 				result = this->_find_lower_bound(key);
-				if (this->_is_duplicate_key(result.bound, key)) {
+				if (this->_is_lower_bound_duplicate(result.bound, key)) {
 					continue;
 				}
 			}
 
-			if (this->max_size() == _data.size) {
-				this->_length_error();
-			}
+			this->_check_max_size();
 			// Extract from other and reset links
-			const auto extracted = other._data.extract(const_iterator(currNode));
-			extracted->left		= _data.head;
-			extracted->right	= _data.head;
+			const auto extracted	= other._data.extract(const_iterator(currNode));
+			extracted->left			= _data.head;
+			extracted->right		= _data.head;
 			// Insert back into *this
-			_data.insert(result.location, extracted); // Handle extracted->parent and extracted->height
+			_data.insert(result.location, extracted); // Handle extracted->parent
 		}
 	}
 
@@ -1052,14 +1104,12 @@ public:
 		}
 		else {
 			result = this->_find_lower_bound(key);
-			if (this->_is_duplicate_key(result.bound, node->value)) {
+			if (this->_is_lower_bound_duplicate(result.bound, node->value)) {
 				return insert_return_type{ iterator(result.bound), false, std::move(handle) };
 			}
 		}
 
-		if (this->max_size() == _data.size) {
-			this->_length_error();
-		}
+		this->_check_max_size();
 
 		node->left	= _data.head;
 		node->right = _data.head;
@@ -1085,18 +1135,28 @@ public:
 		if (result.isDuplicate) {
 			return iterator(result.location.parent);
 		}
-
-		if (this->max_size() == _data.size) {
-			this->_length_error();
-		}
+		
+		this->_check_max_size();
 
 		node->left	= _data.head;
 		node->right = _data.head;
 		return iterator(_data.insert(result.location, handle._release()));
 	}
 
+	void _node_print(_NodePointer node) {
+		if constexpr (_isMap) {
+			std::cout << "<" << node->value.first << ", " << std::fixed << std::setprecision(1) << node->value.second << ">";
+		}
+		else {
+			std::cout << node->value;
+		}
+	}
+
+
 	void level_order() {
 		// Print subtree at node in level-order
+		std::cout << typeid(value_type).name() << "\n";
+
 		_NodePointer root = _data.head->parent;
 		if (root->isNil) {
 			return;
@@ -1108,7 +1168,19 @@ public:
 		nodesQueue.push(root);
 		while (!nodesQueue.empty()) {
 			const _NodePointer node = nodesQueue.front();
-			std::cout << node->value << " ";
+
+			std::cout << "[";
+			if (node->parent->isNil) {
+				std::cout << "-]";
+			}
+			else {
+				const auto key = Traits::key_from_node(node->parent->value);
+				std::cout << std::fixed << std::setprecision(1) << key << "]";
+			}
+
+			std::cout << "-";
+			this->_node_print(node);
+			std::cout << " ";
 
 			const bool isBound = node == bound;
 			if (isBound) {
@@ -1133,18 +1205,21 @@ public:
 	}
 
 private:
-	template<_CopyStrategy _strat, class T2>
-	_NodePointer _copy_node(T2& val) {
-		// Construct node by copying or moving val
+	template<_CopyStrategy _strat>
+	_NodePointer _copy_node(_NodePointer node) {
+		// Construct node by copying or moving node->value
+		const auto& val = node->value;
 		if constexpr (_strat == _CopyStrategy::Copy) {
-			return _NodeType::construct_node(_data.head, val);
+			return _data.copy_node(node, val);
 		}
 		else {
 			if constexpr (_isMap) {
-				return _NodeType::construct_node(const_cast<key_type&>(val.first), std::move(val.second));
+				return _data.copy_node(node, std::pair<const key_type&, typename value_type::second_type&&>(
+					const_cast<key_type&>(val.first), std::move(val.second)
+				));
 			}
 			else {
-				return _NodeType::construct_node(_data.head, std::move(val));
+				return _data.copy_node(node, std::move(val));
 			}
 		}
 	}
@@ -1154,9 +1229,8 @@ private:
 		// Copy subtree at oldRoot into where recursively
 		_NodePointer newRoot = _data.head;
 		if (!oldRoot->isNil) {
-			newRoot = this->_copy_node<_strat>(oldRoot->value);
+			newRoot = this->_copy_node<_strat>(oldRoot);
 			newRoot->parent = where;
-			newRoot->height = oldRoot->height;
 
 			_SubtreeCopyGuard<_MyVal> guard(_data, newRoot);
 			newRoot->left	= this->_copy_subtree<_strat>(oldRoot->left, newRoot);
@@ -1183,9 +1257,9 @@ private:
 	}
 
 	template<class KeyT>
-	[[nodiscard]] bool _is_duplicate_key(_NodePointer bound, const KeyT& key) const {
+	[[nodiscard]] bool _is_lower_bound_duplicate(_NodePointer bound, const KeyT& key) const {
 		// Check if key is duplicate by comparing with bound
-		return !bound->isNil && !(_comp(key, Traits::key_from_node(bound->value)));
+		return !bound->isNil && !static_cast<bool>(_comp(key, Traits::key_from_node(bound->value)));
 	}
 
 	template<class KeyT>
@@ -1206,7 +1280,7 @@ private:
 		_NodePointer currNode = result.location.parent;
 		while (!currNode->isNil) {
 			result.location.parent = currNode;
-			if (_comp(Traits::key_from_node(currNode->value), key)) {
+			if (static_cast<bool>(_comp(Traits::key_from_node(currNode->value), key))) {
 				result.location.child	= _NodeChild::RIGHT;
 				currNode				= currNode->right;
 			}
@@ -1227,7 +1301,7 @@ private:
 		_NodePointer currNode = result.location.parent;
 		while (!currNode->isNil) {
 			result.location.parent = currNode;
-			if (_comp(key, Traits::key_from_node(currNode->value))) {
+			if (static_cast<bool>(_comp(key, Traits::key_from_node(currNode->value)))) {
 				result.location.child	= _NodeChild::LEFT;
 				result.bound			= currNode;
 				currNode				= currNode->left;
@@ -1247,7 +1321,7 @@ private:
 		if constexpr (_isMulti) {
 			if (hintNode->isNil) {
 				// Insert at end if >= last element
-				if (head->parent->isNil || _comp(key, Traits::key_from_node(head->right->value))) {
+				if (head->parent->isNil || static_cast<bool>(_comp(key, Traits::key_from_node(head->right->value)))) {
 					return { { head->right, _NodeChild::RIGHT }, false };
 				}
 				// hintNode is this->end(), it must be closer to the end of equivalent nodes
@@ -1256,17 +1330,17 @@ private:
 
 			if (hintNode == head->left) {
 				// Insert at begin if <= first element
-				if (!_comp(Traits::key_from_node(hintNode->value), key)) {
+				if (!static_cast<bool>(_comp(Traits::key_from_node(hintNode->value), key))) {
 					return { { hintNode, _NodeChild::LEFT }, false };
 				}
 				// hintNode is this->begin(), it must be closer to the beginning of equivalent nodes
 				return { this->_find_lower_bound(key).location, false };
 			}
 
-			if (!_comp(Traits::key_from_node(hintNode->value), key)) {
+			if (!static_cast<bool>(_comp(Traits::key_from_node(hintNode->value), key))) {
 				// key <= *hintNode
 				const _NodePointer prevNode = (--const_iterator(hintNode)).ptr;
-				if (_comp(key, Traits::key_from_node(prevNode->value))) {
+				if (static_cast<bool>(_comp(key, Traits::key_from_node(prevNode->value)))) {
 					// key <= *hintNode and key >= *prevNode, insert here
 					if (prevNode->right->isNil) {
 						return { { prevNode, _NodeChild::RIGHT } , false };
@@ -1283,19 +1357,19 @@ private:
 		}
 		else {
 			if (hintNode->isNil) { // Insert at end if > last element
-				if (head->parent->isNil || _comp(Traits::key_from_node(head->right->value), key)) {
+				if (head->parent->isNil || static_cast<bool>(_comp(Traits::key_from_node(head->right->value), key))) {
 					return { { head->right, _NodeChild::RIGHT }, false };
 				}
 			}
 			else if (hintNode == head->left) { // Insert at begin if < first element
-				if (_comp(key, Traits::key_from_node(hintNode->value))) {
+				if (static_cast<bool>(_comp(key, Traits::key_from_node(hintNode->value)))) {
 					return { { hintNode, _NodeChild::LEFT }, false };
 				}
 			}
-			else if (_comp(key, Traits::key_from_node(hintNode->value))) {
+			else if (static_cast<bool>(_comp(key, Traits::key_from_node(hintNode->value)))) {
 				// key < *hintNode
 				const _NodePointer prevNode = (--const_iterator(hintNode)).ptr;
-				if (_comp(Traits::key_from_node(prevNode->value), key)) {
+				if (static_cast<bool>(_comp(Traits::key_from_node(prevNode->value), key))) {
 					// key < *hintNode and key > *prevNode, insert here
 					if (prevNode->right->isNil) {
 						return { { prevNode, _NodeChild::RIGHT }, false };
@@ -1305,10 +1379,10 @@ private:
 					}
 				}
 			}
-			else if (_comp(Traits::key_from_node(hintNode->value), key)) {
+			else if (static_cast<bool>(_comp(Traits::key_from_node(hintNode->value), key))) {
 				// key > *hintNode
 				const _NodePointer nextNode = (++const_iterator(hintNode)).ptr;
-				if (nextNode->isNil || _comp(key, Traits::key_from_node(nextNode->value))) {
+				if (nextNode->isNil || static_cast<bool>(_comp(key, Traits::key_from_node(nextNode->value)))) {
 					// key > *hintNode and key < *nextNode, insert here
 					if (hintNode->right->isNil) {
 						return { { hintNode, _NodeChild::RIGHT }, false };
@@ -1323,7 +1397,7 @@ private:
 			}
 			// Incorrect hint, key is not in the proximity of *hintNode. Resort to the usual find method
 			const auto result = this->_find_lower_bound(key);
-			if (this->_is_duplicate_key(result.bound, key)) {
+			if (this->_is_lower_bound_duplicate(result.bound, key)) {
 				return { { result.bound, _NodeChild::UNUSED }, true };
 			}
 			return { result.location, false };
@@ -1342,11 +1416,11 @@ private:
 		_NodePointer lowNode	= _data.head; // end() if search fails
 		_NodePointer highNode	= _data.head; // end() if search fails
 		while (!currNode->isNil) {
-			if (_comp(Traits::key_from_node(currNode->value), key)) {
+			if (static_cast<bool>(_comp(Traits::key_from_node(currNode->value), key))) {
 				currNode = currNode->right; // Descend right subtree
 			}
 			else { // currNode is not less than key, remember it
-				if (highNode->isNil && _comp(key, Traits::key_from_node(currNode->value))) {
+				if (highNode->isNil && static_cast<bool>(_comp(key, Traits::key_from_node(currNode->value)))) {
 					highNode = currNode; // currNode is greater than key, remember it
 				}
 
@@ -1357,7 +1431,7 @@ private:
 
 		currNode = highNode->isNil ? _data.head->parent : highNode->left; // Continue searching for upper bound
 		while (!currNode->isNil) {
-			if (_comp(key, Traits::key_from_node(currNode->value))) { // currNode is greater than key, remember it
+			if (static_cast<bool>(_comp(key, Traits::key_from_node(currNode->value)))) { // currNode is greater than key, remember it
 				highNode = currNode;
 				currNode = currNode->left; // Descend left subtree
 			}
@@ -1380,13 +1454,11 @@ private:
 			const auto& key = key_extractor::extract(args...);
 
 			result = this->_find_lower_bound(key);
-			if (this->_is_duplicate_key(result.bound, key)) { // Constructing a temporary node would be wasted here
+			if (this->_is_lower_bound_duplicate(result.bound, key)) { // Constructing a temporary node would be wasted here
 				return { result.bound, false };
 			}
 
-			if (this->max_size() == _data.size) {
-				this->_length_error();
-			}
+			this->_check_max_size();
 			newNode = _BSTreeTempNodeGuard<_NodeType>(_data.head, std::forward<Args>(args)...).release();
 		}
 		else {
@@ -1398,14 +1470,12 @@ private:
 			}
 			else {
 				result = this->_find_lower_bound(key); // Find insert location
-				if (this->_is_duplicate_key(result.bound, key)) { // Duplicate check
+				if (this->_is_lower_bound_duplicate(result.bound, key)) { // Duplicate check
 					return { result.bound, false };
 				}
 			}
 
-			if (this->max_size() == _data.size) {
-				this->_length_error();
-			}
+			this->_check_max_size();
 			newNode = guard.release(); // Safe to insert, release temp node, transfer ownership to *this
 
 		}
@@ -1425,9 +1495,7 @@ private:
 				return result.location.parent;
 			}
 
-			if (this->max_size() == _data.size) {
-				this->_length_error();
-			}
+			this->_check_max_size();
 			newNode = _BSTreeTempNodeGuard<_NodeType>(_data.head, std::forward<Args>(args)...).release();
 		}
 		else {
@@ -1440,9 +1508,7 @@ private:
 				}
 			}
 
-			if (this->max_size() == _data.size) {
-				this->_length_error();
-			}
+			this->_check_max_size();
 			newNode = guard.release(); // Safe to insert, release temp node, transfer ownership to *this
 
 		}
@@ -1482,10 +1548,16 @@ private:
 	[[nodiscard]] _NodePointer _find(const KeyT& key) const {
 		// Find the first element equivalent to key
 		const auto result = this->_find_lower_bound(key);
-		if (this->_is_duplicate_key(result.bound, key)) {
+		if (this->_is_lower_bound_duplicate(result.bound, key)) {
 			return result.bound;
 		}
 		return _data.head;
+	}
+
+	void _check_max_size() const {
+		if (_data.size >= this->max_size()) {
+			this->_length_error();
+		}
 	}
 
 	[[noreturn]] static void _length_error() {

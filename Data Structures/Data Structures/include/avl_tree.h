@@ -40,27 +40,7 @@ public:
 		return newNode;
 	}
 
-	void replace_child(node_pointer oldChild, node_pointer newChild) noexcept {
-		// If oldChild and *this are parent and child, replace oldChild with newChild
-		if (isNil) {
-			parent = newChild;
-		}
-		else if (oldChild == left) {
-			left = newChild;
-		}
-		else if (oldChild == right) {
-			right = newChild;
-		}
-		else {
-			return;
-		}
-
-		if (newChild) {
-			newChild->parent = oldChild->parent;
-		}
-	}
-
-	height_type	height;	// 1 byte, assuming BinarySearch tree height <= 255
+	height_type	height;	// 1 byte unsigned int, assuming BinarySearch tree height <= 255
 };
 
 template<class ValueT, class SizeT, class DiffT, class Ptr, class ConstPtr, class NodeT>
@@ -83,16 +63,14 @@ public:
 
 	node_pointer insert(const _NodeLocation<node_pointer> location, node_pointer newNode) noexcept {
 		// Insert newNode at location
-		++size;
+		newNode->parent = location.parent;
 		if (location.parent == head) { // First node in tree
-			newNode->parent = head;
 			head->left		= newNode;
 			head->right		= newNode;
 			head->parent	= newNode;
 			return newNode;
 		}
 
-		newNode->parent = location.parent;
 		if (location.child == _NodeChild::LEFT) { // Insert as left child
 			location.parent->left = newNode;
 			if (location.parent == head->left) { // New min node, update head->left
@@ -106,54 +84,78 @@ public:
 			}
 		}
 
+		++size;
 		this->_fix_tree(location.parent, newNode);
 		return newNode;
 	}
 
 	node_pointer extract(_BSTreeConstIterator<_AVLTreeCore> where) noexcept {
 		// Extract node pointed by where
-		--size;
 		const node_pointer extracted = where.ptr; // UB: where == _BSTree::end()
+
 		if (size == 0) { // Extract final node
-			head->left = head;
-			head->right = head;
+			head->left		= head;
+			head->right		= head;
+			head->parent	= head;
+			return extracted;
 		}
-		else if (extracted == head->left) { // Extract leftmost node
+		
+		if (extracted == head->left) { // Extract leftmost node
 			head->left = (++_BSTreeConstIterator(where)).ptr;
 		}
-		else if (extracted == head->right) { // Extract rightmost node
+		if (extracted == head->right) { // Extract rightmost node
 			head->right = (--_BSTreeConstIterator(where)).ptr;
 		}
 
-		node_pointer parent = extracted->parent;
+		node_pointer fixNode	= head;
+		node_pointer parent		= extracted->parent;
 		if (!(extracted->left->isNil || extracted->right->isNil)) { // Node has both children
 			const node_pointer successor = this->min(extracted->right);
-			successor->parent->replace_child(successor, head);
+			fixNode = (successor->parent != extracted) ? successor->parent : successor;
+
+			if (successor->parent != extracted) {
+				successor->parent->left = successor->right;
+				if (!successor->right->isNil) {
+					successor->right->parent = successor->parent;
+				}
+				successor->right = extracted->right;
+				extracted->right->parent = successor;
+			}
+
 			extracted->parent->replace_child(extracted, successor);
 
-			if (!extracted->left->isNil) { // Adopt extracted's left child
-				extracted->left->parent = successor;
-				successor->left = std::exchange(extracted->left, head);
-			}
+			successor->left = extracted->left;
+			extracted->left->parent = successor;
 
-			if (!extracted->right->isNil) { // Adopt extracted's right child
-				extracted->right->parent = successor;
-				successor->right = std::exchange(extracted->right, head);
+			successor->height = extracted->height;
+		}
+		else {
+			const node_pointer childNode = !extracted->left->isNil
+				? extracted->left
+				: extracted->right;
+
+			fixNode = extracted->parent;
+			extracted->parent->replace_child(extracted, childNode);
+
+			if (!childNode->isNil) {
+				childNode->parent = extracted->parent;
 			}
-			extracted->parent = successor; // Fix tree starting point
-		}
-		else if (extracted->left->isNil && extracted->right->isNil) { // Extract leaf node
-			parent->replace_child(extracted, head);
-		}
-		else { // Node has a single child
-			const node_pointer childNode = std::exchange(
-				(extracted->left->isNil) ? extracted->right : extracted->left, head
-			);
-			parent->replace_child(extracted, childNode);
 		}
 
-		this->_fix_tree(std::exchange(extracted->parent, head), extracted);
+		if (size > 0) {
+			--size;
+		}
+
+		this->_fix_tree(fixNode, extracted);
 		return extracted;
+	}
+
+	template<class ValueT>
+	node_pointer copy_node(node_pointer node, ValueT&& val) {
+		// Construct new node by copying or moving from node->value, preserving metadata
+		const auto newNode = node_type::construct_node(head, std::forward<ValueT>(val));
+		newNode->height = node->height;
+		return newNode;
 	}
 
 private:
@@ -169,42 +171,18 @@ private:
 
 	void _rotate_left(node_pointer oldRoot) noexcept {
 		// Perform counter-clockwise rotation on subtree at oldRoot
-		const node_pointer parent	= oldRoot->parent;
-		const node_pointer newRoot	= oldRoot->right;
-		const node_pointer child	= newRoot->left;
-
-		parent->replace_child(oldRoot, newRoot);
-
-		oldRoot->parent = newRoot;
-		oldRoot->right	= child;
-		newRoot->left	= oldRoot;
-
-		if (!child->isNil) { // Reattach newRoot's left child to oldRoot
-			child->parent = oldRoot;
-		}
+		_BaseVal::rotate_left(oldRoot);
 
 		_AVLTreeCore::_update_height(oldRoot);
-		_AVLTreeCore::_update_height(newRoot);
+		_AVLTreeCore::_update_height(oldRoot->parent);
 	}
 
 	void _rotate_right(node_pointer oldRoot) noexcept {
 		// Perform clockwise rotation on subtree at oldRoot
-		const node_pointer parent	= oldRoot->parent;
-		const node_pointer newRoot	= oldRoot->left;
-		const node_pointer child	= newRoot->right;
-
-		parent->replace_child(oldRoot, newRoot);
-
-		oldRoot->parent = newRoot;
-		oldRoot->left	= child;
-		newRoot->right	= oldRoot;
-
-		if (!child->isNil) { // Reattach newRoot's right child to oldRoot
-			child->parent = oldRoot;
-		}
+		_BaseVal::rotate_right(oldRoot);
 
 		_AVLTreeCore::_update_height(oldRoot);
-		_AVLTreeCore::_update_height(newRoot);
+		_AVLTreeCore::_update_height(oldRoot->parent);
 	}
 
 	bool _try_rebalance(node_pointer node) noexcept {
@@ -274,6 +252,27 @@ private:
 	using _BaseTree = _BSTree<_BSTreeTraits<T, T, Comp, _AVLTreeNode, false>, _AVLTreeCore>;
 
 public:
+	using key_type		= T;
+	using key_compare	= Comp;
+	using value_compare = typename _BaseTree::value_compare;
+
+	using value_type		= typename _BaseTree::value_type;
+	using size_type			= typename _BaseTree::size_type;
+	using difference_type	= typename _BaseTree::difference_type;
+	using pointer			= typename _BaseTree::pointer;
+	using const_pointer		= typename _BaseTree::const_pointer;
+	using reference			= value_type&;
+	using const_reference	= const value_type&;
+
+	using iterator			= typename _BaseTree::iterator;
+	using const_iterator	= typename _BaseTree::const_iterator;
+
+	using reverse_iterator			= typename _BaseTree::reverse_iterator;
+	using const_reverse_iterator	= typename _BaseTree::const_reverse_iterator;
+
+	using node_handle			= typename _BaseTree::node_handle;
+	using insert_return_type	= typename _BaseTree::insert_return_type;
+
 	using _BaseTree::_BaseTree;
 
 	void swap(AVLTree& other) noexcept(noexcept(_BaseTree::swap(other))) {
@@ -297,7 +296,7 @@ template<class T, class Comp>
 	const AVLTree<T, Comp>& lhs, const AVLTree<T, Comp>& rhs
 ) {
 	return std::lexicographical_compare_three_way(
-		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompareResult<T>{}
+		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{}
 	);
 }
 
@@ -310,6 +309,27 @@ private:
 	using _BaseTree = _BSTree<_BSTreeTraits<T, T, Comp, _AVLTreeNode, true>, _AVLTreeCore>;
 
 public:
+	using key_type		= T;
+	using key_compare	= Comp;
+	using value_compare = typename _BaseTree::value_compare;
+
+	using value_type		= typename _BaseTree::value_type;
+	using size_type			= typename _BaseTree::size_type;
+	using difference_type	= typename _BaseTree::difference_type;
+	using pointer			= typename _BaseTree::pointer;
+	using const_pointer		= typename _BaseTree::const_pointer;
+	using reference			= value_type&;
+	using const_reference	= const value_type&;
+
+	using iterator			= typename _BaseTree::iterator;
+	using const_iterator	= typename _BaseTree::const_iterator;
+
+	using reverse_iterator			= typename _BaseTree::reverse_iterator;
+	using const_reverse_iterator	= typename _BaseTree::const_reverse_iterator;
+
+	using node_handle			= typename _BaseTree::node_handle;
+	using insert_return_type	= typename _BaseTree::insert_return_type;
+
 	using _BaseTree::_BaseTree;
 
 	void swap(AVLMultiTree& other) noexcept(noexcept(_BaseTree::swap(other))) {
@@ -333,7 +353,7 @@ template<class T, class Comp>
 	const AVLMultiTree<T, Comp>& lhs, const AVLMultiTree<T, Comp>& rhs
 ) {
 	return std::lexicographical_compare_three_way(
-		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompareResult<T>{}
+		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{}
 	);
 }
 #endif // AVL_TREE_H

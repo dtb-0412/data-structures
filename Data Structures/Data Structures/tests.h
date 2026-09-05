@@ -10,12 +10,14 @@
 #include"./include/dynamic_array.h"
 #include"./include/forward_list.h"
 #include"./include/map.h"
+#include"./include/rb_tree.h"
 #include"./include/set.h"
 #include"common.h"
 #include"printer.hpp"
+#include"random.hpp"
 
-#define TYPE Type<int>
-#define COMP TypeCompare
+#define TYPE int
+#define COMP std::less<> //TypeCompare
 
 void avl_tree_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
@@ -27,23 +29,26 @@ void avl_tree_test() {
 			tree.emplace_hint(tree.end(), TYPE(val));
 		}
 
+		AVLTree<TYPE, COMP> tree1(tree);
+
 		AVLTree<TYPE, COMP> tree2;
 		tree2.insert(data2.begin(), data2.end());
 		tree2.level_order();
 		std::cout << "\n\n";
 
-		tree.merge(tree2);
+		tree1.erase(8);
+		//tree1.merge(tree2);
 
 		printer::Printer printer;
 		printer.sep(", ").alt("Empty\n");
 		printer
 			.prompt("Tree1: ")
-			.print_range(tree.begin(), tree.end());
+			.print_range(tree1.begin(), tree1.end());
 
 		printer
 			.prompt("Tree2: ")
 			.print_range(tree2.begin(), tree2.end());
-		tree.level_order();
+		tree1.level_order();
 	}
 
 	std::cout << "\nPress any key to exit...";
@@ -109,12 +114,90 @@ void forward_list_test() {
 	std::cin.get();
 }
 
-void map_test() {
+struct MapDefaultPrint {
+	template<concepts::printable T, concepts::printable U>
+	void operator()(std::ostream& os, const std::pair<const T, U>& val) const {
+		os << "[" << val.first << "]" << ": " << std::fixed << std::setprecision(1) << val.second;
+	}
+};
 
+void map_test() {
+	random::RandomGenerator<std::uniform_real_distribution<>> rng(0.0, 100.0);
+
+	std::vector<int> key1({ 5, 4, 8, 3, 6, 13, 12, 24, });
+	std::vector<int> key2({ 7, 20, 10, 2, 9, 1 });
+
+	std::vector<std::pair<TYPE, double>> data, data2;
+	data.reserve(key1.size());
+	data2.reserve(key2.size());
+	for (const auto& key : key1) {
+		data.emplace_back(key, rng.next());
+	}
+	for (const auto& key : key2) {
+		data2.emplace_back(key, rng.next());
+	}
+
+	{
+		Map<TYPE, double, COMP> map;
+		for (const auto& val : data) {
+			map.emplace(val);
+		}
+
+		Map<TYPE, double, COMP> map1(map);
+		Map<TYPE, double, COMP> map2;
+		map2.insert(data2.begin(), data2.end());
+		map2.level_order();
+		std::cout << "\n\n";
+
+		map1.erase(8);
+		map1.merge(map2);
+
+		printer::Printer printer;
+		printer.sep(", ").alt("Empty\n");
+		printer
+			.prompt("Map1: ")
+			.print_range(map1.begin(), map1.end(), MapDefaultPrint{});
+		printer
+			.prompt("Map2: ")
+			.print_range(map2.begin(), map2.end(), MapDefaultPrint{});
+		map1.level_order();
+	}
 }
 
 void rb_tree_test() {
+	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
+	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
 
+	{
+		RBTree<TYPE, COMP> tree;
+		for (const auto& val : data) {
+			tree.emplace_hint(tree.end(), TYPE(val));
+		}
+
+		RBTree<TYPE, COMP> tree1(tree);
+
+		RBTree<TYPE, COMP> tree2;
+		tree2.insert(data2.begin(), data2.end());
+		tree2.level_order();
+		std::cout << "\n\n";
+
+		tree1.erase(8);
+		//tree1.merge(tree2);
+
+		printer::Printer printer;
+		printer.sep(", ").alt("Empty\n");
+		printer
+			.prompt("Tree1: ")
+			.print_range(tree1.begin(), tree1.end());
+
+		printer
+			.prompt("Tree2: ")
+			.print_range(tree2.begin(), tree2.end());
+		tree1.level_order();
+	}
+
+	std::cout << "\nPress any key to exit...";
+	std::cin.get();
 }
 
 void set_test() {
