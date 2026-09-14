@@ -47,10 +47,6 @@ public:
 		return ptr == rhs.ptr;
 	}
 
-	[[nodiscard]] bool operator!=(const _ForwardListConstIterator& rhs) const noexcept {
-		return !(*this == rhs);
-	}
-
 public:
 	_NodePointer ptr;
 };
@@ -161,12 +157,13 @@ public:
 	node_pointer head;
 };
 
-template<class NodeT>
+template<class NodeT, class SizeT>
 struct _ForwardListInsertGuard {
+	// Guard for forward list insertion failure
 	using node_type		= NodeT;
+	using size_type		= SizeT;
 	using node_pointer	= typename node_type::node_pointer;
 
-	// Guard for list insertion failure
 	_ForwardListInsertGuard() noexcept
 		: head(), tail() {}
 
@@ -185,9 +182,9 @@ struct _ForwardListInsertGuard {
 	}
 
 	template<class... Args>
-	void append_n(std::size_t count, const Args&... args) {
+	void append_n(size_type count, const Args&... args) {
 		// Append count elements by constructing in place using args
-		if (count == 0) {
+		if (count <= 0) {
 			return;
 		}
 
@@ -258,9 +255,7 @@ struct _ForwardListInsertGuard {
 template<class NodeT>
 struct _ForwardListRemoveGuard {
 	/*
-	This serves 2 purposes:
-		1. RAII guard for list remove failure
-		2. Queue for nodes waiting to be removed
+	Guard for forward list batch removal failure
 
 	Instead of removing nodes while iterating, we queue them up and remove them all at once.
 
@@ -333,14 +328,14 @@ public:
 
 	explicit ForwardList(const size_type count)
 		: _data() {
-		_ForwardListInsertGuard<_NodeType> guard;
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
 		guard.append_n(count);
 		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(const size_type count, const T& val)
 		: _data() {
-		_ForwardListInsertGuard<_NodeType> guard;
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
 		guard.append_n(count, val);
 		guard.attach_after(_data.before_head());
 	}
@@ -348,21 +343,21 @@ public:
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	ForwardList(It first, Se last)
 		: _data() {
-		_ForwardListInsertGuard<_NodeType> guard;
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
 		guard.append_range(std::move(first), std::move(last));
 		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(std::initializer_list<T> initList)
 		: _data() {
-		_ForwardListInsertGuard<_NodeType> guard;
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
 		guard.append_range(initList.begin(), initList.end());
 		guard.attach_after(_data.before_head());
 	}
 
 	ForwardList(const ForwardList& other)
 		: _data() {
-		_ForwardListInsertGuard<_NodeType> guard;
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
 		guard.append_range(other.begin(), other.end());
 		guard.attach_after(_data.before_head());
 	}
@@ -440,7 +435,18 @@ public:
 		return _data.head->value;
 	}
 
+	[[nodiscard]] bool is_empty() const noexcept {
+		return _data.head == nullptr;
+	}
+
 	[[nodiscard]] size_type size() const noexcept {
+		/*
+		We have to trade off between having O(1) size query and O(1) splice. Whichever we choose, the other will be O(n).
+		ForwardList is designed to be light, memory efficient and zero-overhead. Therefore, we sacrifice the size query
+		for performance and efficiency.
+		
+		This operation is O(n) because we basically count every node in the list.
+		*/
 		return static_cast<size_type>(std::distance(this->begin(), this->end()));
 	}
 
@@ -449,10 +455,6 @@ public:
 			static_cast<size_type>(std::numeric_limits<difference_type>::max()),
 			static_cast<size_type>(-1) / sizeof(_NodeType)
 		);
-	}
-
-	[[nodiscard]] bool is_empty() const noexcept {
-		return _data.head == nullptr;
 	}
 
 	void push_front(const T& val) {
@@ -492,23 +494,25 @@ public:
 
 	iterator insert_after(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val after where
-		if (count != 0) {
-			_ForwardListInsertGuard<_NodeType> guard;
-			guard.append_n(count, val);
-			return iterator(guard.attach_after(where.ptr));
+		if (count == 0) {
+			return iterator(where.ptr);
 		}
-		return iterator(where.ptr);
+
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
+		guard.append_n(count, val);
+		return iterator(guard.attach_after(where.ptr));
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	iterator insert_after(const_iterator where, It first, It last) {
 		// Insert range [first, last) after where
-		if (first != last) {
-			_ForwardListInsertGuard<_NodeType> guard;
-			guard.append_range(std::move(first), std::move(last));
-			return iterator(guard.attach_after(where.ptr));
+		if (first == last) {
+			return iterator(where.ptr);
 		}
-		return iterator(where.ptr);
+
+		_ForwardListInsertGuard<_NodeType, size_type> guard;
+		guard.append_range(std::move(first), std::move(last));
+		return iterator(guard.attach_after(where.ptr));
 	}
 
 	iterator insert_after(const_iterator where, std::initializer_list<T> initList) {
@@ -569,26 +573,36 @@ public:
 		}
 	}
 
-	void splice_after(const_iterator where, ForwardList<T>& other) noexcept {
+	void splice_after(const_iterator where, ForwardList& other) noexcept {
 		// Splice all of other after where
 		if (this != std::addressof(other) && !other.is_empty()) {
-			this->_splice_after(where, other.before_begin(), other.end());
+			this->_splice_after(where, other, other.before_begin(), other.end());
 		}
 	}
 
-	void splice_after(const_iterator where, ForwardList<T>&& other) noexcept {
+	void splice_after(const_iterator where, ForwardList&& other) noexcept {
 		// Splice all of other after where
 		this->splice_after(where, other);
 	}
 
-	void splice_after(const_iterator where, const_iterator first) noexcept {
-		// Splice one node in range (first, first + 2) after where
-		return this->_splice_after(where, first);
+	void splice_after(const_iterator where, ForwardList& other, const_iterator first) noexcept {
+		// Splice one node in range (first, first + 2) of other after where
+		return this->_splice_after(where, other, first);
 	}
 
-	void splice_after(const_iterator where, const_iterator first, const_iterator last) noexcept {
-		// Splice range (first, last) after where
-		return this->_splice_after(where, first, last);
+	void splice_after(const_iterator where, ForwardList&& other, const_iterator first) noexcept {
+		// Splice one node in range (first, first + 2) of other after where
+		return this->_splice_after(where, other, first);
+	}
+
+	void splice_after(const_iterator where, ForwardList& other, const_iterator first, const_iterator last) noexcept {
+		// Splice range (first, last) of other after where
+		return this->_splice_after(where, other, first, last);
+	}
+
+	void splice_after(const_iterator where, ForwardList&& other, const_iterator first, const_iterator last) noexcept {
+		// Splice range (first, last) of other after where
+		return this->_splice_after(where, other, first, last);
 	}
 
 	size_type remove(const T& val) {
@@ -694,7 +708,7 @@ private:
 			const _NodePointer nextNode = currNode->next;
 			if (!nextNode) {
 				// Runs out of nodes, insert the remaining nodes to *this
-				_ForwardListInsertGuard<_NodeType> guard;
+				_ForwardListInsertGuard<_NodeType, size_type> guard;
 				guard.append_range(first, last);
 				guard.attach_after(currNode);
 				return;
@@ -718,8 +732,10 @@ private:
 		_NodeType::free_node(subject);
 	}
 
-	void _splice_after(const_iterator where, const_iterator first) noexcept {
+	void _splice_after(const_iterator where, ForwardList& other, const_iterator first) noexcept {
 		// Splice one node in range (first, first + 2) after where
+		(void)other;
+
 		const _NodePointer whereNode	= where.ptr;
 		const _NodePointer currNode		= first.ptr;
 
@@ -734,8 +750,10 @@ private:
 	}
 
 	template<class Se>
-	void _splice_after(const_iterator where, const_iterator first, Se last) noexcept {
+	void _splice_after(const_iterator where, ForwardList& other, const_iterator first, Se last) noexcept {
 		// Splice range (first, last) after node
+		(void)other;
+
 		if (first == last) {
 			return;
 		}

@@ -446,30 +446,6 @@ public:
 		return _data.first[index];
 	}
 
-	[[nodiscard]] constexpr T& front() {
-		return *_data.first; // UB: nullptr dereference
-	}
-
-	[[nodiscard]] constexpr const T& front() const {
-		return *_data.first;
-	}
-
-	[[nodiscard]] constexpr T& back() {
-		return *(_data.last - 1); // UB: nullptr dereference
-	}
-
-	[[nodiscard]] constexpr const T& back() const {
-		return *(_data.last - 1);
-	}
-
-	[[nodiscard]] constexpr T* data() noexcept {
-		return _data.first;
-	}
-
-	[[nodiscard]] constexpr const T* data() const noexcept {
-		return _data.first;
-	}
-
 	[[nodiscard]] constexpr iterator begin() noexcept {
 		return iterator(_data.first);
 	}
@@ -495,19 +471,19 @@ public:
 	}
 
 	[[nodiscard]] constexpr reverse_iterator rbegin() noexcept {
-		return reverse_iterator(end());
+		return reverse_iterator(this->end());
 	}
 
 	[[nodiscard]] constexpr const_reverse_iterator rbegin() const noexcept {
-		return const_reverse_iterator(end());
+		return const_reverse_iterator(this->end());
 	}
 
 	[[nodiscard]] constexpr reverse_iterator rend() noexcept {
-		return reverse_iterator(begin());
+		return reverse_iterator(this->begin());
 	}
 
 	[[nodiscard]] constexpr const_reverse_iterator rend() const noexcept {
-		return const_reverse_iterator(begin());
+		return const_reverse_iterator(this->begin());
 	}
 
 	[[nodiscard]] constexpr const_reverse_iterator crbegin() const noexcept {
@@ -516,6 +492,30 @@ public:
 
 	[[nodiscard]] constexpr const_reverse_iterator crend() const noexcept {
 		return this->rend();
+	}
+
+	[[nodiscard]] constexpr T& front() {
+		return *_data.first; // UB: nullptr dereference
+	}
+
+	[[nodiscard]] constexpr const T& front() const {
+		return *_data.first;
+	}
+
+	[[nodiscard]] constexpr T& back() {
+		return *(_data.last - 1); // UB: nullptr dereference
+	}
+
+	[[nodiscard]] constexpr const T& back() const {
+		return *(_data.last - 1);
+	}
+
+	[[nodiscard]] constexpr T* data() noexcept {
+		return _data.first;
+	}
+
+	[[nodiscard]] constexpr const T* data() const noexcept {
+		return _data.first;
 	}
 
 	[[nodiscard]] constexpr bool is_empty() const noexcept {
@@ -554,12 +554,12 @@ public:
 	}
 
 	template<class... Args>
-	constexpr iterator emplace(const_iterator pos, Args&&... args) {
-		// Insert by perfectly forwarding args at pos
-		const pointer posPtr	= pos.ptr;
+	constexpr iterator emplace(const_iterator where, Args&&... args) {
+		// Insert by perfectly forwarding args at where
+		const pointer wherePtr	= where.ptr;
 		const pointer oldLast	= _data.last;
 		if (oldLast != _data.end) { // Has unused capacity
-			if (posPtr == oldLast) { // At back, provide strong guarantee
+			if (wherePtr == oldLast) { // At back, provide strong guarantee
 				this->_emplace_back_with_unused_capacity(std::forward<Args>(args)...);
 			}
 			else {
@@ -572,37 +572,37 @@ public:
 				// Shift the last element to the right by 1 offset, potentially uninitialized memory
 				memory::construct_at(oldLast, std::move(oldLast[-1]));
 				++_data.last;
-				// Shift range [posPtr, oldLast - 1) to the right by 1 offset (shift backward to avoid overlap)
-				memory::move_backward(posPtr, oldLast - 1, oldLast);
-				// Insert new element at pos
-				*posPtr = std::move(guard.get_object());
+				// Shift range [wherePtr, oldLast - 1) to the right by 1 offset (shift backward to avoid overlap)
+				memory::move_backward(wherePtr, oldLast - 1, oldLast);
+				// Insert new element at where
+				*wherePtr = std::move(guard.get_object());
 			}
-			return iterator(posPtr);
+			return iterator(wherePtr);
 		}
-		return iterator(this->_emplace_reallocate(posPtr, std::forward<Args>(args)...));
+		return iterator(this->_emplace_reallocate(wherePtr, std::forward<Args>(args)...));
 	}
 
-	constexpr iterator insert(const_iterator pos, const T& val) {
-		// Insert by copying val at pos
-		return this->emplace(pos, val);
+	constexpr iterator insert(const_iterator where, const T& val) {
+		// Insert by copying val at where
+		return this->emplace(where, val);
 	}
 
-	constexpr iterator insert(const_iterator pos, T&& val) {
-		// Insert by moving val at pos
-		return this->emplace(pos, std::move(val));
+	constexpr iterator insert(const_iterator where, T&& val) {
+		// Insert by moving val at where
+		return this->emplace(where, std::move(val));
 	}
 
-	constexpr iterator insert(const_iterator pos, const size_type count, const T& val) {
-		// Insert count * val at pos
+	constexpr iterator insert(const_iterator where, const size_type count, const T& val) {
+		// Insert count * val at where
 		pointer& myLast = _data.last;
 
-		const pointer posPtr	= pos.ptr;
+		const pointer wherePtr	= where.ptr;
 		const pointer oldFirst	= _data.first;
 		const pointer oldLast	= _data.last;
 
-		const auto offset			= static_cast<size_type>(posPtr - oldFirst);
+		const auto offset			= static_cast<size_type>(wherePtr - oldFirst);
 		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
-		const bool oneAtBack		= count == 1 && posPtr == oldLast;
+		const bool oneAtBack		= count == 1 && wherePtr == oldLast;
 		if (count > unusedCapacity) { // Reallocate
 			const auto oldSize = this->size();
 			if (count > this->max_size() - oldSize) {
@@ -628,9 +628,9 @@ public:
 				}
 			}
 			else {
-				memory::uninitialized_move(oldFirst, posPtr, newFirst, newFirst + offset);
+				memory::uninitialized_move(oldFirst, wherePtr, newFirst, newFirst + offset);
 				guard.constructedFirst = newFirst;
-				memory::uninitialized_move(posPtr, oldLast, newFirst + offset + count, newFirst + newSize);
+				memory::uninitialized_move(wherePtr, oldLast, newFirst + offset + count, newFirst + newSize);
 			}
 			guard.release();
 
@@ -647,47 +647,47 @@ public:
 			const memory::_TempObjectGuard<T> guard(val);
 			const auto& object = guard.get_object();
 
-			const auto affected = static_cast<size_type>(oldLast - posPtr);
+			const auto affected = static_cast<size_type>(oldLast - wherePtr);
 			if (count > affected) {
 				// Fill (count - affected) * val into [oldLast, oldLast + count - affected), potentially uninitialized memory
 				myLast = memory::uninitialized_fill_n(oldLast, count - affected, object);
-				// Shift range [posPtr, oldLast) to the right by count offset, potentially uninitialized memory
-				const auto [_, out] = memory::uninitialized_move(posPtr, oldLast, posPtr + count, oldLast + count);
+				// Shift range [wherePtr, oldLast) to the right by count offset, potentially uninitialized memory
+				const auto [_, out] = memory::uninitialized_move(wherePtr, oldLast, wherePtr + count, oldLast + count);
 				myLast = out;
-				// Fill affected * val into [posPtr, oldLast)
-				memory::fill(posPtr, oldLast, object);
+				// Fill affected * val into [wherePtr, oldLast)
+				memory::fill(wherePtr, oldLast, object);
 			}
 			else {
 				// Shift range [oldLast - count, oldLast) to the right by count offset, potentially uninitialized memory
 				auto [_, out] = memory::uninitialized_move(oldLast - count, oldLast, oldLast, oldLast + count);
 				myLast = out;
-				// Shift range [posPtr, oldLast - count) backward to the right by count offset (shift backward to avoid overlap)
-				memory::move_backward(posPtr, oldLast - count, oldLast);
-				// Fill count * val into [posPtr, posPtr + count)
-				memory::fill_n(posPtr, count, object);
+				// Shift range [wherePtr, oldLast - count) backward to the right by count offset (shift backward to avoid overlap)
+				memory::move_backward(wherePtr, oldLast - count, oldLast);
+				// Fill count * val into [wherePtr, wherePtr + count)
+				memory::fill_n(wherePtr, count, object);
 			}
 		}
-		return iterator(_data.first + offset); // Initial posPtr is invalidated
+		return iterator(_data.first + offset); // Initial wherePtr is invalidated
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
-	constexpr iterator insert(const_iterator pos, It first, Se last) {
-		// Insert range [first, last) at pos
-		const auto offset = static_cast<size_type>(pos.ptr - _data.first);
+	constexpr iterator insert(const_iterator where, It first, Se last) {
+		// Insert range [first, last) at where
+		const auto offset = static_cast<size_type>(where.ptr - _data.first);
 		if constexpr (std::forward_iterator<It>) {
 			const auto count = static_cast<size_type>(std::distance(first, last));
-			this->_insert_counted_range(pos, std::move(first), count);
+			this->_insert_counted_range(where, std::move(first), count);
 		}
 		else {
-			this->_insert_uncounted_range(pos, std::move(first), std::move(last));
+			this->_insert_uncounted_range(where, std::move(first), std::move(last));
 		}
 		return iterator(_data.first + offset);
 	}
 
-	constexpr iterator insert(const_iterator pos, std::initializer_list<T> initList) {
-		// Insert initList at pos
-		const auto offset = static_cast<size_type>(pos.ptr - _data.first);
-		this->_insert_counted_range(pos, initList.begin(), initList.size());
+	constexpr iterator insert(const_iterator where, std::initializer_list<T> initList) {
+		// Insert initList at where
+		const auto offset = static_cast<size_type>(where.ptr - _data.first);
+		this->_insert_counted_range(where, initList.begin(), initList.size());
 		return iterator(_data.first + offset);
 	}
 
@@ -739,17 +739,17 @@ public:
 		--_data.last;
 	}
 
-	constexpr iterator erase(const_iterator pos)
+	constexpr iterator erase(const_iterator where)
 		noexcept(std::is_nothrow_move_assignable_v<T>)
 	{
-		// Erase element at pos
+		// Erase element at where
 		pointer& myLast = _data.last;
 
-		const pointer posPtr = pos.ptr;
-		memory::move(posPtr + 1, myLast, posPtr);
+		const pointer wherePtr = where.ptr;
+		memory::move(wherePtr + 1, myLast, wherePtr);
 		memory::destruct_at(myLast - 1);
 		--myLast;
-		return iterator(posPtr); // Make new iterator, pos is already invalidated
+		return iterator(wherePtr); // Make new iterator, where is already invalidated
 	}
 
 	constexpr iterator erase(const_iterator first, const_iterator last)
@@ -897,12 +897,12 @@ private:
 	}
 
 	template<class... Args>
-	constexpr pointer _emplace_reallocate(const pointer pos, Args&&... args) {
-		// Realllocate then insert by perfectly forwarding args at pos
+	constexpr pointer _emplace_reallocate(const pointer where, Args&&... args) {
+		// Realllocate then insert by perfectly forwarding args at where
 		pointer& myFirst	= _data.first;
 		pointer& myLast		= _data.last;
 
-		const auto offset	= static_cast<size_type>(pos - myFirst);
+		const auto offset	= static_cast<size_type>(where - myFirst);
 		const auto oldSize	= this->size();
 		if (oldSize == this->max_size()) {
 			this->_length_error();
@@ -918,7 +918,7 @@ private:
 		memory::construct_at(newFirst + offset, std::forward<Args>(args)...);
 		guard.constructedFirst = newFirst + offset;
 
-		if (pos == myLast) {
+		if (where == myLast) {
 			if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
 				memory::uninitialized_move(myFirst, myLast, newFirst, newFirst + oldSize);
 			}
@@ -927,11 +927,11 @@ private:
 			}
 		}
 		else {
-			memory::uninitialized_move(myFirst, pos, newFirst, newFirst + oldSize);
+			memory::uninitialized_move(myFirst, where, newFirst, newFirst + oldSize);
 			guard.constructedFirst = newFirst;
 
-			const auto newPos = newFirst + offset;
-			memory::uninitialized_move(pos, myLast, newPos + 1, newPos + 1 + (myLast - pos));
+			const auto newOffset = newFirst + offset;
+			memory::uninitialized_move(where, myLast, newOffset + 1, newOffset + 1 + (myLast - where));
 		}
 		guard.release();
 
@@ -1015,8 +1015,8 @@ private:
 	}
 
 	template<class It, class Se>
-	constexpr void _insert_uncounted_range(const_iterator pos, It first, Se last) {
-		// Insert unknown number of elements from [first, last) at pos
+	constexpr void _insert_uncounted_range(const_iterator where, It first, Se last) {
+		// Insert unknown number of elements from [first, last) at where
 		if (first == last) {
 			return;
 		}
@@ -1024,7 +1024,7 @@ private:
 		pointer& myFirst	= _data.first;
 		pointer& myLast		= _data.last;
 
-		const auto offset	= static_cast<size_type>(pos.ptr - myFirst);
+		const auto offset	= static_cast<size_type>(where.ptr - myFirst);
 		const auto size		= this->size();
 
 		this->_append_uncounted_range(std::move(first), std::move(last));
@@ -1032,17 +1032,17 @@ private:
 	}
 
 	template<class It>
-	constexpr void _insert_counted_range(const_iterator pos, It first, const size_type count) {
-		// Insert elements from counted range [first, first + count) at pos
+	constexpr void _insert_counted_range(const_iterator where, It first, const size_type count) {
+		// Insert elements from counted range [first, first + count) at where
 		pointer& myLast = _data.last;
 		
-		const pointer posPtr	= pos.ptr;
+		const pointer wherePtr	= where.ptr;
 		const pointer oldFirst	= _data.first;
 		const pointer oldLast	= _data.last;
 
-		const auto offset			= static_cast<size_type>(posPtr - oldFirst);
+		const auto offset			= static_cast<size_type>(wherePtr - oldFirst);
 		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
-		const bool oneAtBack		= count == 1 && posPtr == oldLast;
+		const bool oneAtBack		= count == 1 && wherePtr == oldLast;
 		if (count > unusedCapacity) { // Reallocate
 			const auto oldSize = this->size();
 			if (count > this->max_size() - oldSize) {
@@ -1068,9 +1068,9 @@ private:
 				}
 			}
 			else {
-				memory::uninitialized_move(oldFirst, posPtr, newFirst, newFirst + offset);
+				memory::uninitialized_move(oldFirst, wherePtr, newFirst, newFirst + offset);
 				guard.constructedFirst = newFirst;
-				memory::uninitialized_move(posPtr, oldLast, newFirst + offset + count, newFirst + newSize);
+				memory::uninitialized_move(wherePtr, oldLast, newFirst + offset + count, newFirst + newSize);
 			}
 			guard.release();
 
@@ -1081,22 +1081,22 @@ private:
 		}
 		else {
 			/*
-			The process here is similar to insert(pos, count, val), but with a different requirement on T.
-				- insert(pos, first, last) only requires T to be EmplaceConstructible
-				- insert(pos, count, val) requires T to be CopyAssignable and CopyInsertable
+			The process here is similar to insert(where, count, val), but with a different requirement on T.
+				- insert(where, first, last) only requires T to be EmplaceConstructible
+				- insert(where, count, val) requires T to be CopyAssignable and CopyInsertable
 
-			Thus, we need to turn range [pos, pos + count) into raw memory, then construct by copying from
+			Thus, we need to turn range [where, where + count) into raw memory, then construct by copying from
 			[first, first + count), instead of assigning directly.
 			*/
-			const auto affected = static_cast<size_type>(oldLast - posPtr);
+			const auto affected = static_cast<size_type>(oldLast - wherePtr);
 			if (count >= affected) {
 				// Shift the affected range to the right by count offset, potentially uninitialized memory
-				const auto [_, out] = memory::uninitialized_move(posPtr, oldLast, posPtr + count, posPtr + count + affected);
+				const auto [_, out] = memory::uninitialized_move(wherePtr, oldLast, wherePtr + count, wherePtr + count + affected);
 				myLast = out;
-				// Try to construct by copying [first, first + count) into [posPtr, posPtr + count), uninitialized memory
-				memory::destruct(posPtr, oldLast);
+				// Try to construct by copying [first, first + count) into [wherePtr, wherePtr + count), uninitialized memory
+				memory::destruct(wherePtr, oldLast);
 				try {
-					memory::uninitialized_copy_n(std::move(first), count, posPtr, posPtr + count);
+					memory::uninitialized_copy_n(std::move(first), count, wherePtr, wherePtr + count);
 				}
 				catch (...) {
 					/*
@@ -1104,14 +1104,14 @@ private:
 
 					VaporizedGuard is used to guard against double failure, which would leave the array in an invalid state.
 
-					When this happens, all elements from [posPtr, oldLast + count) will be vaporized. Due to double failure
+					When this happens, all elements from [wherePtr, oldLast + count) will be vaporized. Due to double failure
 					(fail to rollback a rollback), we can no longer provide strong guarantee. The least we can do is to make
 					sure the array is in a valid state, by vaporizing all elements in the affected range.
 					*/
 
-					// Shift the affected range back into [posPtr, oldLast), uninitialized memory
-					_ArrayVaporizeGuard<_MyVal> guard(_data, posPtr, posPtr + count);
-					memory::uninitialized_move(posPtr + count, myLast, posPtr, oldLast);
+					// Shift the affected range back into [wherePtr, oldLast), uninitialized memory
+					_ArrayVaporizeGuard<_MyVal> guard(_data, wherePtr, wherePtr + count);
+					memory::uninitialized_move(wherePtr + count, myLast, wherePtr, oldLast);
 					guard.release();
 					// Turn range [oldLast, oldLast + count) back into raw memory
 					memory::destruct(oldLast, myLast);
@@ -1123,20 +1123,20 @@ private:
 				// Shift range [oldLast - count, oldLast) to the right by count offset, potentially uninitialized memory
 				const auto [_, out] = memory::uninitialized_move(oldLast - count, oldLast, oldLast, oldLast + count);
 				myLast = out;
-				// Shift range [posPtr, oldLast - count) backward to the right by count offset
-				memory::move_backward(posPtr, oldLast - count, oldLast);
+				// Shift range [wherePtr, oldLast - count) backward to the right by count offset
+				memory::move_backward(wherePtr, oldLast - count, oldLast);
 				
-				memory::destruct(posPtr, posPtr + count);
+				memory::destruct(wherePtr, wherePtr + count);
 				try {
-					memory::uninitialized_copy_n(std::move(first), count, posPtr, posPtr + count);
+					memory::uninitialized_copy_n(std::move(first), count, wherePtr, wherePtr + count);
 				}
 				catch (...) {
-					// Shift the first count elements of the affected range back into [posPtr, posPtr + count)
-					_ArrayVaporizeGuard<_MyVal> guard(_data, posPtr, posPtr + count);
-					memory::uninitialized_move(posPtr + count, posPtr + 2 * count, posPtr, posPtr + count);
+					// Shift the first count elements of the affected range back into [wherePtr, wherePtr + count)
+					_ArrayVaporizeGuard<_MyVal> guard(_data, wherePtr, wherePtr + count);
+					memory::uninitialized_move(wherePtr + count, wherePtr + 2 * count, wherePtr, wherePtr + count);
 					guard.release();
-					// Shift the remaining elements back into [posPtr + count, oldLast)
-					memory::move(posPtr + 2 * count, myLast, posPtr + count);
+					// Shift the remaining elements back into [wherePtr + count, oldLast)
+					memory::move(wherePtr + 2 * count, myLast, wherePtr + count);
 
 					memory::destruct(oldLast, myLast);
 					myLast = oldLast;
@@ -1158,8 +1158,8 @@ private:
 
 		/*
 		- If exhausted only the source: Trim, then Append does nothing
-		- If exhausted only the dest: Append, then Trim does nothing
-		- If exhausted both ranges: Trim does nothing, then Append does nothing
+		- If exhausted only the dest:	Append, then Trim does nothing
+		- If exhausted both ranges:		Trim does nothing, then Append does nothing
 		*/
 		
 		// Trim

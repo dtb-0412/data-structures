@@ -164,12 +164,10 @@ public:
 	using reference			= const value_type&;
 
 	_BSTreeConstIterator() noexcept
-		: ptr() {
-	}
+		: ptr() {}
 
 	_BSTreeConstIterator(_NodePointer ptr) noexcept
-		: ptr(ptr) {
-	}
+		: ptr(ptr) {}
 
 	[[nodiscard]] reference operator*() const noexcept {
 		return ptr->value;
@@ -232,10 +230,6 @@ public:
 
 	[[nodiscard]] bool operator==(const _BSTreeConstIterator& other) const noexcept {
 		return ptr == other.ptr;
-	}
-
-	[[nodiscard]] bool operator!=(const _BSTreeConstIterator& other) const noexcept {
-		return !(*this == other);
 	}
 
 public:
@@ -400,8 +394,7 @@ public:
 	using const_pointer		= ConstPtr;
 
 	_BSTreeCore() noexcept
-		: head(), size(0) {
-	}
+		: head(), size(0) {}
 
 	[[nodiscard]] static node_pointer min(node_pointer node)  noexcept {
 		// Get the leftmost node in subtree at node
@@ -742,6 +735,10 @@ public:
 		return _data.head->right->value;
 	}
 
+	[[nodiscard]] bool is_empty() const noexcept {
+		return _data.size == 0;
+	}
+
 	[[nodiscard]] size_type size() const noexcept {
 		return _data.size;
 	}
@@ -751,10 +748,6 @@ public:
 			static_cast<size_type>(std::numeric_limits<difference_type>::max()),
 			static_cast<size_type>(-1) / sizeof(_NodeType)
 		);
-	}
-
-	[[nodiscard]] bool is_empty() const noexcept {
-		return _data.size == 0;
 	}
 
 	[[nodiscard]] key_compare key_comp() const {
@@ -1151,7 +1144,6 @@ public:
 			std::cout << node->value;
 		}
 	}
-
 
 	void level_order() {
 		// Print subtree at node in level-order
