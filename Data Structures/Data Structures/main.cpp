@@ -2,9 +2,10 @@
 
 int main() {
 	//avl_tree_test();
+	deque_test();
 	//dynamic_array_test();
 	//forward_list_test();
-	list_test();
+	//list_test();
 	//map_test();
 	//rb_tree_test();
 	//set_test();

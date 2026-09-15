@@ -1,19 +1,23 @@
 #pragma once
 
+#include<deque>
 #include<forward_list>
 #include<list>
 #include<map>
+#include<queue>
 #include<set>
 #include<stack>
 #include<vector>
 
 #include"./include/avl_tree.h"
+#include"./include/deque.h"
 #include"./include/dynamic_array.h"
 #include"./include/forward_list.h"
 #include"./include/list.h"
 #include"./include/map.h"
 #include"./include/rb_tree.h"
 #include"./include/set.h"
+#include"./include/stack.h"
 #include"common.h"
 #include"printer.hpp"
 #include"random.hpp"
@@ -67,6 +71,16 @@ void avl_tree_test() {
 	*/
 }
 
+void deque_test() {
+	Deque<char> deque;
+
+	//printer::Printer printer;
+	//printer.sep(", ").alt("Empty\n");
+
+	std::cout << "\nPress any key to exit...";
+	std::cin.get();
+}
+
 void dynamic_array_test() {
 	DynamicArray<int> arr;
 	arr.reserve(20);
@@ -117,29 +131,30 @@ void forward_list_test() {
 }
 
 void list_test() {
-	//ForwardList<int> flist1({ 1, 5, 8, 4, 10 });
-	//ForwardList<int> flist2({ 3, 7, 2, 9, 6 });
+	List<int> list1({ 1, 5, 8, 4, 10 });
+	List<int> list2({ 3, 7, 2, 9, 6 });
 
-	//flist1.splice_after(std::next(flist1.begin(), flist1.size() - 1), flist2);
-	//flist1.sort();
-	//flist1.remove_if(
-	//	[&](const auto& val) -> bool { return val % 2 == 0; },
-	//	std::next(flist1.begin(), flist1.size() / 2 - 1), flist1.end()
-	//); // Remove all even elements from mid range to end
+	list1.splice(std::next(list1.begin(), list1.size()), list2);
+	list1.sort();
+	list1.remove_if(
+		[&](const auto& val) -> bool { return val % 2 == 0; },
+		std::next(list1.begin(), list1.size() / 2 - 1), list1.end()
+	); // Remove all even elements from mid range to end
+	list1.reverse(list1.begin(), std::next(list1.begin(), list1.size() / 2 + 1));
 
-	//printer::Printer printer;
-	//printer.sep(printer::COMMA).alt("Empty\n");
+	printer::Printer printer;
+	printer.sep(printer::COMMA).alt("Empty\n");
 
-	//printer
-	//	.prompt("Flist1: ")
-	//	.print_range(flist1);
-	//printer
-	//	.prompt("Flist2: ")
-	//	.print_n(flist2.begin(), std::distance(flist2.begin(), flist2.end()));
+	printer
+		.prompt("Flist1: ")
+		.print_range(list1.begin(), list1.end());
+	printer
+		.prompt("Flist2: ")
+		.print_n(list2.begin(), std::distance(list2.begin(), list2.end()));
 
-	//printer
-	//	.sep("")
-	//	.print_args("Size: ", flist1.size(), " - ", flist2.size());
+	printer
+		.sep("")
+		.print_args("Size: ", list1.size(), " - ", list2.size());
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
@@ -259,6 +274,23 @@ void set_test() {
 			.print_range(set2.begin(), set2.end());
 		set.level_order();
 	}
+
+	std::cout << "\nPress any key to exit...";
+	std::cin.get();
+}
+
+void stack_test() {
+	//Stack<int> arr;
+
+	//for (auto i = 0; i < 10; ++i) {
+	//	arr.push(i);
+	//}
+
+	//printer::Printer printer;
+	//printer.sep(", ").alt("Empty\n");
+	//printer
+	//	.prompt("Array: ")
+	//	.print_range(arr.begin(), arr.end());
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();

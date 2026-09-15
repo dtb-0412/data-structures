@@ -220,7 +220,7 @@ private:
 		// Travel upwards from node to root, update node height and rebalance if needed
 		_AVLTreeCore::_update_height(newNode); // Reset node height for correct rebalancing
 
-		for (;;) {
+		while (true) {
 			if (node->isNil) { // Reach head before rebalancing
 				return;
 			}
@@ -232,7 +232,7 @@ private:
 			node = node->parent;
 		}
 
-		for (;;) { // Update the remaining nodes height
+		while (true) { // Update the remaining nodes height
 			node = node->parent;
 			if (node->isNil) {
 				return;

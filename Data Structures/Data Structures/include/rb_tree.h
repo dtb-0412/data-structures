@@ -172,10 +172,10 @@ public:
 		return extracted;
 	}
 
-	template<class ValueT>
-	node_pointer copy_node(node_pointer node, ValueT&& val) {
+	template<class T>
+	node_pointer copy_node(node_pointer node, T&& val) {
 		// Construct new node by copying or moving from node->value, preserving metadata
-		const auto newNode = node_type::construct_node(head, std::forward<ValueT>(val));
+		const auto newNode = node_type::construct_node(head, std::forward<T>(val));
 		newNode->color = node->color;
 		return newNode;
 	}

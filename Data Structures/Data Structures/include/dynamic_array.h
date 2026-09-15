@@ -184,8 +184,7 @@ public:
 };
 
 template<class ValueT, class SizeT, class DiffT, class Ptr, class ConstPtr>
-class _DynamicArrValue {
-public:
+struct _DynamicArrValue {
 	using value_type		= ValueT;
 	using size_type			= SizeT;
 	using difference_type	= DiffT;
@@ -199,7 +198,6 @@ public:
 		: first(first), last(last), end(end) {}
 
 	constexpr void clear() noexcept {
-		// Erase all elements
 		if (first) {
 			memory::destruct(first, last);
 			memory::deallocate(first, static_cast<size_type>(end - first) * sizeof(value_type));
@@ -211,14 +209,12 @@ public:
 	}
 
 	constexpr void swap(_DynamicArrValue& other) noexcept {
-		// Swap contents with other
 		using std::swap; // Intentional ADL
 		swap(first, other.first);
 		swap(last, other.last);
 		swap(end, other.end);
 	}
 
-public:
 	pointer first;	// Points to the beginning of the array
 	pointer last;	// Points to the end of values in the array (size)
 	pointer end;	// Points to the end of allocated memory in the array (capacity)
@@ -296,13 +292,12 @@ struct _ArrayTransferGuard {
 	}
 
 	constexpr void release() noexcept {
-		constructedFirst = nullptr;
-		constructedLast = nullptr;
+		constructedFirst	= nullptr;
+		constructedLast		= nullptr;
 		base.release();
 	}
 
 	_ArrayReallocateGuard<DynamicArrVal> base;
-
 	pointer constructedFirst;	// Start of the constructed range
 	pointer constructedLast;	// One-past-end of the constructed range
 };
@@ -327,7 +322,7 @@ struct _ArrayVaporizeGuard {
 
 	constexpr void release() noexcept {
 		data = nullptr;
-		vaporizedFirst = nullptr;
+		vaporizedFirst	= nullptr;
 		destructedFirst = nullptr;
 	}
 
@@ -361,12 +356,12 @@ public:
 	constexpr DynamicArray() noexcept
 		: _data() {}
 
-	constexpr explicit DynamicArray(size_type count)
+	constexpr explicit DynamicArray(const size_type count)
 		: _data() {
 		this->_construct_n(count);
 	}
 
-	constexpr DynamicArray(size_type count, const T& val)
+	constexpr DynamicArray(const size_type count, const T& val)
 		: _data() {
 		this->_construct_n(count, val);
 	}
@@ -537,12 +532,6 @@ public:
 		return static_cast<size_type>(_data.end - _data.first);
 	}
 
-	template<class... Args>
-	constexpr reference emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding args into element at end, provide strong guarantee
-		return this->_emplace_back(std::forward<Args>(args)...);
-	}
-
 	constexpr void push_back(const T& val) {
 		// Insert by copying val at end, provide strong guarantee
 		this->_emplace_back(val);
@@ -580,6 +569,12 @@ public:
 			return iterator(wherePtr);
 		}
 		return iterator(this->_emplace_reallocate(wherePtr, std::forward<Args>(args)...));
+	}
+
+	template<class... Args>
+	constexpr reference emplace_back(Args&&... args) {
+		// Insert by perfectly forwarding args into element at end, provide strong guarantee
+		return this->_emplace_back(std::forward<Args>(args)...);
 	}
 
 	constexpr iterator insert(const_iterator where, const T& val) {
@@ -691,24 +686,24 @@ public:
 		return iterator(_data.first + offset);
 	}
 
-	constexpr void assign(const size_type newSize, const T& val) {
-		// Assign newSize * val
+	constexpr void assign(const size_type count, const T& val) {
+		// Assign count * val
 		pointer& myFirst	= _data.first;
 		pointer& myLast		= _data.last;
 
-		if (newSize > this->capacity()) { // Reallocate
-			this->_clear_reallocate(newSize);
-			myLast = memory::uninitialized_fill_n(myFirst, newSize, val);
+		if (count > this->capacity()) { // Reallocate
+			this->_clear_reallocate(count);
+			myLast = memory::uninitialized_fill_n(myFirst, count, val);
 			return;
 		}
 		
-		const auto oldSize = this->size();
-		if (newSize > oldSize) { // Fill and append
+		const auto size = this->size();
+		if (count > size) { // Fill and append
 			memory::fill(myFirst, myLast, val);
-			myLast = memory::uninitialized_fill_n(myLast, newSize - oldSize, val);
+			myLast = memory::uninitialized_fill_n(myLast, count - size, val);
 		}
 		else { // Fill and trim
-			const pointer newLast = myFirst + newSize;
+			const pointer newLast = myFirst + count;
 			memory::fill(myFirst, newLast, val);
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
@@ -821,7 +816,7 @@ public:
 	}
 
 private:
-	constexpr void _allocate(size_type newCapacity) {
+	constexpr void _allocate(const size_type newCapacity) {
 		// Allocate array for newCapacity elements
 		if (newCapacity > this->max_size()) {
 			this->_length_error();
@@ -868,7 +863,7 @@ private:
 		guard.release();
 	}
 
-	constexpr void _change_array(const pointer newFirst, const size_type newSize, const size_type newCapacity) noexcept {
+	constexpr void _change_array(pointer newFirst, const size_type newSize, const size_type newCapacity) noexcept {
 		// Discard old array, acquire new array
 		pointer& myFirst	= _data.first;
 		pointer& myLast		= _data.last;
@@ -897,7 +892,7 @@ private:
 	}
 
 	template<class... Args>
-	constexpr pointer _emplace_reallocate(const pointer where, Args&&... args) {
+	constexpr pointer _emplace_reallocate(pointer where, Args&&... args) {
 		// Realllocate then insert by perfectly forwarding args at where
 		pointer& myFirst	= _data.first;
 		pointer& myLast		= _data.last;

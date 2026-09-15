@@ -393,6 +393,7 @@ public:
 	using pointer			= Ptr;
 	using const_pointer		= ConstPtr;
 
+public:
 	_BSTreeCore() noexcept
 		: head(), size(0) {}
 
@@ -604,7 +605,7 @@ public:
 	_BSTree(It first, Se last)
 		: _data(), _comp() {
 		_TreeConstructGuard<_MyVal> guard(_data);
-		this->insert(first, last);
+		this->insert(std::move(first), std::move(last));
 		guard.release();
 	}
 
@@ -612,7 +613,7 @@ public:
 	_BSTree(It first, Se last, const key_compare& comp)
 		: _data(), _comp(comp) {
 		_TreeConstructGuard<_MyVal> guard(_data);
-		this->insert(first, last);
+		this->insert(std::move(first), std::move(last));
 		guard.release();
 	}
 
@@ -812,7 +813,7 @@ public:
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
-	void insert(It first, Se last) {
+	void insert(It first, const Se last) {
 		// Insert range [first, last)
 		for (; first != last; ++first) {
 			this->_emplace_hint(_data.head, *first);
