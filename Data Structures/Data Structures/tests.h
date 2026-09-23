@@ -7,6 +7,7 @@
 #include<queue>
 #include<set>
 #include<stack>
+#include<unordered_map>
 #include<vector>
 
 #include"./include/avl_tree.h"
@@ -72,10 +73,29 @@ void avl_tree_test() {
 }
 
 void deque_test() {
-	Deque<char> deque;
+#pragma pack(push, 1)
+	struct _13BytesStruct {
+		int*	_8Bytes;
+		int		_4Bytes;
+		bool	_1byte;
+	};
+#pragma pack(pop)
+	Deque<_13BytesStruct> deque;
 
-	//printer::Printer printer;
-	//printer.sep(", ").alt("Empty\n");
+	//const Deque<int> deque({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
+	//deque.assign({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
+	//deque.resize(5);
+	//deque.clear();
+
+	printer::Printer printer;
+	printer.sep(", ").alt("Empty\n");
+	
+	//std::cout << "Size: " << deque.size() << "\n";
+	//deque.print_map();
+	//
+	//printer
+	//	.prompt("\nMy deque: ")
+	//	.print_range(deque.begin(), deque.end());
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
@@ -90,6 +110,8 @@ void dynamic_array_test() {
 	}
 	arr.insert(arr.end(), 5, 99);
 	arr.emplace(arr.begin(), arr[5]);
+	arr.erase(arr.begin(), arr.begin() + 5);
+	//arr.assign(13, 22);
 
 	printer::Printer printer;
 	printer.sep(", ").alt("Empty\n");
@@ -106,11 +128,18 @@ void forward_list_test() {
 	ForwardList<int> flist2({ 3, 7, 2, 9, 6 });
 
 	flist1.splice_after(std::next(flist1.begin(), flist1.size() - 1), flist2);
-	flist1.sort();
-	flist1.remove_if(
-		[&](const auto& val) -> bool { return val % 2 == 0; },
-		std::next(flist1.begin(), flist1.size() / 2 - 1), flist1.end()
-	); // Remove all even elements from mid range to end
+	flist1.sort_after(std::next(flist1.before_begin(), 5), flist1.end());
+	std::cout << "Sort after range (" << 
+		*std::next(flist1.before_begin(), 5) << ", " << 
+		*std::next(flist1.begin(), flist1.size() - 1) << ")\n";
+	//flist1.resize(20, 7);
+	//flist1.remove_if_after(
+	//	[&](const auto& val) -> bool { return val % 2 == 0; },
+	//	std::next(flist1.begin(), flist1.size() / 2 - 1), flist1.end()
+	//); // Remove all even elements from mid range to end
+	//flist1.erase_after(std::next(flist1.begin(), 9), std::next(flist1.begin(), flist1.size() - 1));
+	//flist1.assign({ 3, 2, 1 });
+	//flist1.resize(12, 99);
 
 	printer::Printer printer;
 	printer.sep(printer::COMMA).alt("Empty\n");
@@ -136,11 +165,17 @@ void list_test() {
 
 	list1.splice(std::next(list1.begin(), list1.size()), list2);
 	list1.sort();
-	list1.remove_if(
-		[&](const auto& val) -> bool { return val % 2 == 0; },
-		std::next(list1.begin(), list1.size() / 2 - 1), list1.end()
-	); // Remove all even elements from mid range to end
-	list1.reverse(list1.begin(), std::next(list1.begin(), list1.size() / 2 + 1));
+	std::cout << "Sort after range [" <<
+		*std::next(list1.begin(), 4) << ", " <<
+		*std::prev(list1.end(), 1) << "]\n";
+	//list1.remove_if(
+	//	[&](const auto& val) -> bool { return val % 2 == 0; },
+	//	std::next(list1.begin(), list1.size() / 2 - 1), list1.end()
+	//); // Remove all even elements from mid range to end
+	////list1.erase(std::next(list1.begin(), 9), std::next(list1.begin(), list1.size() - 1));
+	//list1.assign({ 3, 2, 1 });
+	//list1.resize(3);
+	//list1.reverse(list1.begin(), list1.end());
 
 	printer::Printer printer;
 	printer.sep(printer::COMMA).alt("Empty\n");

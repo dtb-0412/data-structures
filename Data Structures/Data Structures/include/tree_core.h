@@ -372,11 +372,11 @@ struct _BSTreeNode {
 		}
 	}
 
-	node_pointer left;		// 8 bytes pointer
-	node_pointer right;		// 8 bytes pointer
-	node_pointer parent;	// 8 bytes pointer
+	node_pointer left;		// Left child
+	node_pointer right;		// Right child
+	node_pointer parent;
 
-	value_type	value;		// sizeof(value_type)
+	value_type	value;
 
 	bool isNil; // 1 byte boolean, whether node is head sentinel or child of leaf nodes
 };
@@ -506,48 +506,48 @@ template<class BSTreeVal>
 struct _TreeConstructGuard {
 	using node_type = typename BSTreeVal::node_type;
 
-	_TreeConstructGuard(BSTreeVal& data)
-		: data(std::addressof(data)) {
-		this->data->head = node_type::construct_head();
+	_TreeConstructGuard(BSTreeVal* ptr)
+		: ptr(ptr) {
+		this->ptr->head = node_type::construct_head();
 	}
 
 	_TreeConstructGuard(const _TreeConstructGuard&)				= delete;
 	_TreeConstructGuard& operator=(const _TreeConstructGuard&)	= delete;
 
 	~_TreeConstructGuard() noexcept {
-		if (data) {
-			data->clear();
+		if (ptr) {
+			ptr->clear();
 		}
 	}
 
 	void release() noexcept {
-		data = nullptr;
+		ptr = nullptr;
 	}
 
-	BSTreeVal* data;
+	BSTreeVal* ptr;
 };
 
 template<class BSTreeVal>
 struct _SubtreeCopyGuard {
 	using node_pointer = typename BSTreeVal::node_pointer;
 
-	_SubtreeCopyGuard(BSTreeVal& data, node_pointer newRoot)
-		: data(std::addressof(data)), newRoot(newRoot) {}
+	_SubtreeCopyGuard(BSTreeVal* ptr, node_pointer newRoot)
+		: ptr(ptr), newRoot(newRoot) {}
 
 	_SubtreeCopyGuard(const _SubtreeCopyGuard&)				= delete;
 	_SubtreeCopyGuard& operator=(const _SubtreeCopyGuard&)	= delete;
 
 	~_SubtreeCopyGuard() noexcept {
-		if (data) {
-			data->clear_subtree(newRoot);
+		if (ptr) {
+			ptr->clear_subtree(newRoot);
 		}
 	}
 
 	void release() noexcept {
-		data = nullptr;
+		ptr = nullptr;
 	}
 
-	BSTreeVal*		data;
+	BSTreeVal*		ptr;
 	node_pointer	newRoot;
 };
 
@@ -1200,7 +1200,7 @@ public:
 private:
 	template<_CopyStrategy _strat>
 	_NodePointer _copy_node(_NodePointer node) {
-		// Construct node by copying or moving node->value
+		// Construct new node by copying or moving node->value
 		const auto& val = node->value;
 		if constexpr (_strat == _CopyStrategy::Copy) {
 			return _data.copy_node(node, val);

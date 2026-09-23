@@ -215,8 +215,8 @@ struct _DynamicArrValue {
 		swap(end, other.end);
 	}
 
-	pointer first;	// Points to the beginning of the array
-	pointer last;	// Points to the end of values in the array (size)
+	pointer first;	// Points to the first element in the array
+	pointer last;	// Points to past-the-end element in the array (size)
 	pointer end;	// Points to the end of allocated memory in the array (capacity)
 };
 
@@ -227,23 +227,23 @@ struct _ValueInitializeTag {
 template<class DynamicArrVal>
 struct _ArrayConstructGuard {
 	// Guard for array construction failure
-	_ArrayConstructGuard(DynamicArrVal& data)
-		: data(std::addressof(data)) {}
+	_ArrayConstructGuard(DynamicArrVal* ptr)
+		: ptr(ptr) {}
 
 	_ArrayConstructGuard(const _ArrayConstructGuard&)				= delete;
 	_ArrayConstructGuard& operator=(const _ArrayConstructGuard&)	= delete;
 
 	constexpr ~_ArrayConstructGuard() noexcept {
-		if (data) {
-			data->clear();
+		if (ptr) {
+			ptr->clear();
 		}
 	}
 
 	constexpr void release() noexcept {
-		data = nullptr;
+		ptr = nullptr;
 	}
 
-	DynamicArrVal* data;
+	DynamicArrVal* ptr;
 };
 
 template<class DynamicArrVal>
@@ -282,8 +282,8 @@ struct _ArrayTransferGuard {
 	_ArrayTransferGuard(const size_type newCapacity, pointer newFirst, pointer constructedFirst, pointer constructedLast)
 		: base(newCapacity, newFirst), constructedFirst(constructedFirst), constructedLast(constructedLast) {}
 
-	_ArrayTransferGuard(const _ArrayTransferGuard&) = delete;
-	_ArrayTransferGuard& operator=(const _ArrayTransferGuard&) = delete;
+	_ArrayTransferGuard(const _ArrayTransferGuard&)				= delete;
+	_ArrayTransferGuard& operator=(const _ArrayTransferGuard&)	= delete;
 
 	constexpr ~_ArrayTransferGuard() noexcept {
 		if (constructedFirst) {
@@ -307,26 +307,26 @@ struct _ArrayVaporizeGuard {
 	// Guard for double failure when inserting range of elements
 	using pointer = typename DynamicArrVal::pointer;
 
-	_ArrayVaporizeGuard(DynamicArrVal& data, pointer vaporizedFirst, pointer destructedFirst)
-		: data(std::addressof(data)), vaporizedFirst(vaporizedFirst), destructedFirst(destructedFirst) {}
+	_ArrayVaporizeGuard(DynamicArrVal* ptr, pointer vaporizedFirst, pointer destructedFirst)
+		: ptr(ptr), vaporizedFirst(vaporizedFirst), destructedFirst(destructedFirst) {}
 
 	_ArrayVaporizeGuard(const _ArrayVaporizeGuard&)				= delete;
 	_ArrayVaporizeGuard& operator=(const _ArrayVaporizeGuard&)	= delete;
 
 	constexpr ~_ArrayVaporizeGuard() noexcept {
-		if (data) {
-			memory::destruct(destructedFirst, data->last);
-			data->last = vaporizedFirst;
+		if (ptr) {
+			memory::destruct(destructedFirst, ptr->last);
+			ptr->last = vaporizedFirst;
 		}
 	}
 
 	constexpr void release() noexcept {
-		data = nullptr;
+		ptr = nullptr;
 		vaporizedFirst	= nullptr;
 		destructedFirst = nullptr;
 	}
 
-	DynamicArrVal* data;
+	DynamicArrVal* ptr;
 	pointer vaporizedFirst;		// First element to be vaporized
 	pointer destructedFirst;	// First element to be destructed
 };
@@ -374,7 +374,7 @@ public:
 			this->_construct_n(count, std::move(first), std::move(last));
 		}
 		else {
-			_ArrayConstructGuard<_MyVal> guard(_data);
+			_ArrayConstructGuard<_MyVal> guard(std::addressof(_data));
 			this->_append_uncounted_range(std::move(first), std::move(last));
 			guard.release();
 		}
@@ -419,23 +419,23 @@ public:
 		return *this;
 	}
 
-	[[nodiscard]] constexpr T& operator[](const size_type index) {
+	[[nodiscard]] constexpr T& operator[](const size_type index) noexcept {
 		return _data.first[index]; // UB: nullptr dereference
 	}
 
-	[[nodiscard]] constexpr const T& operator[](const size_type index) const {
+	[[nodiscard]] constexpr const T& operator[](const size_type index) const noexcept {
 		return _data.first[index];
 	}
 
 	[[nodiscard]] constexpr T& at(const size_type index) {
-		if (index >= size()) {
+		if (index >= this->size()) {
 			this->_subscription_error();
 		}
 		return _data.first[index];
 	}
 
 	[[nodiscard]] constexpr const T& at(const size_type index) const {
-		if (index >= size()) {
+		if (index >= this->size()) {
 			this->_subscription_error();
 		}
 		return _data.first[index];
@@ -532,14 +532,8 @@ public:
 		return static_cast<size_type>(_data.end - _data.first);
 	}
 
-	constexpr void push_back(const T& val) {
-		// Insert by copying val at end, provide strong guarantee
-		this->_emplace_back(val);
-	}
-
-	constexpr void push_back(T&& val) {
-		// Insert by moving val at end, provide strong guarantee
-		this->_emplace_back(std::move(val));
+	[[nodiscard]] constexpr size_type unused_capacity() const noexcept {
+		return static_cast<size_type>(_data.end - _data.last);
 	}
 
 	template<class... Args>
@@ -547,7 +541,7 @@ public:
 		// Insert by perfectly forwarding args at where
 		const pointer wherePtr	= where.ptr;
 		const pointer oldLast	= _data.last;
-		if (oldLast != _data.end) { // Has unused capacity
+		if (this->unused_capacity() > 0) {
 			if (wherePtr == oldLast) { // At back, provide strong guarantee
 				this->_emplace_back_with_unused_capacity(std::forward<Args>(args)...);
 			}
@@ -573,8 +567,21 @@ public:
 
 	template<class... Args>
 	constexpr reference emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding args into element at end, provide strong guarantee
-		return this->_emplace_back(std::forward<Args>(args)...);
+		// Insert by perfectly forwarding args at end, provide strong guarantee
+		if (this->unused_capacity() > 0) {
+			return this->_emplace_back_with_unused_capacity(std::forward<Args>(args)...);
+		}
+		return *this->_emplace_reallocate(_data.last, std::forward<Args>(args)...);
+	}
+
+	constexpr void push_back(const T& val) {
+		// Insert by copying val at end, provide strong guarantee
+		this->emplace_back(val);
+	}
+
+	constexpr void push_back(T&& val) {
+		// Insert by moving val at end, provide strong guarantee
+		this->emplace_back(std::move(val));
 	}
 
 	constexpr iterator insert(const_iterator where, const T& val) {
@@ -587,136 +594,66 @@ public:
 		return this->emplace(where, std::move(val));
 	}
 
+	constexpr iterator insert(const_iterator where, const size_type count) {
+		// Insert count * value-initialized at where
+		return iterator(this->_insert(where.ptr, count));
+	}
+
 	constexpr iterator insert(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val at where
-		pointer& myLast = _data.last;
-
-		const pointer wherePtr	= where.ptr;
-		const pointer oldFirst	= _data.first;
-		const pointer oldLast	= _data.last;
-
-		const auto offset			= static_cast<size_type>(wherePtr - oldFirst);
-		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
-		const bool oneAtBack		= count == 1 && wherePtr == oldLast;
-		if (count > unusedCapacity) { // Reallocate
-			const auto oldSize = this->size();
-			if (count > this->max_size() - oldSize) {
-				this->_length_error();
-			}
-
-			const auto newSize			= oldSize + count;
-			const auto newCapacity		= this->_calculate_growth(newSize);
-			const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
-			const auto constructedLast	= newFirst + offset + count;
-
-			_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, constructedLast, constructedLast);
-
-			memory::uninitialized_fill_n(newFirst + offset, count, val);
-			guard.constructedFirst = newFirst + offset;
-
-			if (oneAtBack) {
-				if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-					memory::uninitialized_move(oldFirst, oldLast, newFirst, newFirst + oldSize);
-				}
-				else {
-					memory::uninitialized_copy(oldFirst, oldLast, newFirst, newFirst + oldSize);
-				}
-			}
-			else {
-				memory::uninitialized_move(oldFirst, wherePtr, newFirst, newFirst + offset);
-				guard.constructedFirst = newFirst;
-				memory::uninitialized_move(wherePtr, oldLast, newFirst + offset + count, newFirst + newSize);
-			}
-			guard.release();
-
-			this->_change_array(newFirst, newSize, newCapacity);
-		}
-		else if (count == 0) {
-			// Do nothing, iterators won't be invalidated
-		}
-		else if (oneAtBack) {
-			this->_emplace_back_with_unused_capacity(val);
-		}
-		else {
-			// Handle aliasing with temporary object guard
-			const memory::_TempObjectGuard<T> guard(val);
-			const auto& object = guard.get_object();
-
-			const auto affected = static_cast<size_type>(oldLast - wherePtr);
-			if (count > affected) {
-				// Fill (count - affected) * val into [oldLast, oldLast + count - affected), potentially uninitialized memory
-				myLast = memory::uninitialized_fill_n(oldLast, count - affected, object);
-				// Shift range [wherePtr, oldLast) to the right by count offset, potentially uninitialized memory
-				const auto [_, out] = memory::uninitialized_move(wherePtr, oldLast, wherePtr + count, oldLast + count);
-				myLast = out;
-				// Fill affected * val into [wherePtr, oldLast)
-				memory::fill(wherePtr, oldLast, object);
-			}
-			else {
-				// Shift range [oldLast - count, oldLast) to the right by count offset, potentially uninitialized memory
-				auto [_, out] = memory::uninitialized_move(oldLast - count, oldLast, oldLast, oldLast + count);
-				myLast = out;
-				// Shift range [wherePtr, oldLast - count) backward to the right by count offset (shift backward to avoid overlap)
-				memory::move_backward(wherePtr, oldLast - count, oldLast);
-				// Fill count * val into [wherePtr, wherePtr + count)
-				memory::fill_n(wherePtr, count, object);
-			}
-		}
-		return iterator(_data.first + offset); // Initial wherePtr is invalidated
+		return iterator(this->_insert(where.ptr, count, val));
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	constexpr iterator insert(const_iterator where, It first, Se last) {
 		// Insert range [first, last) at where
-		const auto offset = static_cast<size_type>(where.ptr - _data.first);
-		if constexpr (std::forward_iterator<It>) {
-			const auto count = static_cast<size_type>(std::distance(first, last));
-			this->_insert_counted_range(where, std::move(first), count);
-		}
-		else {
-			this->_insert_uncounted_range(where, std::move(first), std::move(last));
-		}
-		return iterator(_data.first + offset);
+		return iterator(this->_insert_range(where.ptr, std::move(first), std::move(last)));
 	}
 
 	constexpr iterator insert(const_iterator where, std::initializer_list<T> initList) {
 		// Insert initList at where
 		const auto offset = static_cast<size_type>(where.ptr - _data.first);
-		this->_insert_counted_range(where, initList.begin(), initList.size());
+		this->_insert_counted_range(where.ptr, initList.begin(), initList.size());
 		return iterator(_data.first + offset);
+	}
+
+	constexpr iterator append(const size_type count) {
+		// Append count * value-initialized
+		return iterator(this->_insert(_data.last, count));
+	}
+
+	constexpr iterator append(const size_type count, const T& val) {
+		// Append count * val
+		return iterator(this->_insert(_data.last, count, val));
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	constexpr iterator append(It first, Se last) {
+		// Append range [first, last)
+		return iterator(this->_insert_range(_data.last, std::move(first), std::move(last)));
+	}
+
+	constexpr iterator append(std::initializer_list<T> initList) {
+		// Append initList
+		return this->insert(this->end(), initList);
+	}
+
+	constexpr void assign(const size_type count) {
+		// Assign count * value-initialized
+		this->_assign(count, _ValueInitializeTag{});
 	}
 
 	constexpr void assign(const size_type count, const T& val) {
 		// Assign count * val
-		pointer& myFirst	= _data.first;
-		pointer& myLast		= _data.last;
-
-		if (count > this->capacity()) { // Reallocate
-			this->_clear_reallocate(count);
-			myLast = memory::uninitialized_fill_n(myFirst, count, val);
-			return;
-		}
-		
-		const auto size = this->size();
-		if (count > size) { // Fill and append
-			memory::fill(myFirst, myLast, val);
-			myLast = memory::uninitialized_fill_n(myLast, count - size, val);
-		}
-		else { // Fill and trim
-			const pointer newLast = myFirst + count;
-			memory::fill(myFirst, newLast, val);
-			memory::destruct(newLast, myLast);
-			myLast = newLast;
-		}
+		this->_assign(count, val);
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	constexpr void assign(It first, Se last) {
 		// Assign range [first, last)
 		if constexpr (std::forward_iterator<It>) {
-			const auto count = static_cast<size_type>(std::distance(first, last));
+			const auto count = static_cast<size_type>(std::distance(first, std::move(last)));
 			this->_assign_counted_range(std::move(first), count);
-			return;
 		}
 		else {
 			this->_assign_uncounted_range(std::move(first), std::move(last));
@@ -724,14 +661,13 @@ public:
 	}
 
 	constexpr void assign(const std::initializer_list<T> initList) {
-		// Assign range [initList.begin(), initList.end())
+		// Assign initList
 		this->_assign_counted_range(initList.begin(), initList.size());
 	}
 
 	constexpr void pop_back() noexcept {
 		// Erase the last element
-		memory::destruct_at(_data.last - 1); // UB: Array could be empty
-		--_data.last;
+		memory::destruct_at(--_data.last); // UB: nullptr dereference
 	}
 
 	constexpr iterator erase(const_iterator where)
@@ -742,8 +678,7 @@ public:
 
 		const pointer wherePtr = where.ptr;
 		memory::move(wherePtr + 1, myLast, wherePtr);
-		memory::destruct_at(myLast - 1);
-		--myLast;
+		memory::destruct_at(--myLast);
 		return iterator(wherePtr); // Make new iterator, where is already invalidated
 	}
 
@@ -756,27 +691,37 @@ public:
 		const pointer firstPtr	= first.ptr;
 		const pointer lastPtr	= last.ptr;
 		if (firstPtr != lastPtr) {
-			const auto [_, out] = memory::move(lastPtr, myLast, firstPtr);
-			
-			const pointer newLast = out;
+			const pointer newLast = memory::move(lastPtr, myLast, firstPtr).out;
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
 		}
 		return iterator(firstPtr); // Make new iterator, first is already invalidated
 	}
 
+	constexpr void clear() noexcept {
+		// Erase all elements and free all memory
+		_data.clear();
+	}
+
+	constexpr void swap(DynamicArray& other) noexcept {
+		// Swap with other
+		if (this != std::addressof(other)) {
+			_data.swap(other._data);
+		}
+	}
+
 	constexpr void resize(const size_type newSize) {
-		// Trim or append value-initialized elements to newSize, provide strong guarantee
+		// Trim or append value-initialized elements to reach newSize, provide strong guarantee
 		this->_resize(newSize, _ValueInitializeTag{});
 	}
 
 	constexpr void resize(const size_type newSize, const T& val) {
-		// Trim or append copies of val, provide strong guarantee
+		// Trim or append copies of val to reach newSize, provide strong guarantee
 		this->_resize(newSize, val);
 	}
 
 	constexpr void reserve(const size_type newCapacity) {
-		// Increase capacity to newCapacity, provide strong guarantee
+		// Expand capacity to newCapacity, provide strong guarantee
 		if (newCapacity > this->capacity()) {
 			if (newCapacity > this->max_size()) {
 				this->_length_error();
@@ -788,7 +733,7 @@ public:
 
 	constexpr void shrink_to_fit() {
 		// Shrink capacity to size, provide strong guarantee
-		if (_data.last != _data.end) {
+		if (this->unused_capacity() > 0) {
 			if (this->is_empty()) {
 				_data.clear();
 			}
@@ -798,26 +743,9 @@ public:
 		}
 	}
 
-	constexpr void clear() noexcept {
-		// Erase all elements
-		if (this->is_empty()) {
-			return;
-		}
-
-		memory::destruct(_data.first, _data.last);
-		_data.last = _data.first;
-	}
-
-	constexpr void swap(DynamicArray& other) noexcept {
-		// Swap with other
-		if (this != std::addressof(other)) {
-			_data.swap(other._data);
-		}
-	}
-
 private:
 	constexpr void _allocate(const size_type newCapacity) {
-		// Allocate array for newCapacity elements
+		// Allocate array for newCapacity elements. Current array must be empty.
 		if (newCapacity > this->max_size()) {
 			this->_length_error();
 		}
@@ -832,10 +760,10 @@ private:
 	template<class... Args>
 	constexpr void _construct_n(const size_type count, Args&&... args) {
 		/*
-		Dispatch between 3 construction:
+		Dispatch between 3 construction methods:
 			* 1-arg: value-construction			e.g. DynamicArray(5)
 			* 2-arg: fill construction			e.g. DynamicArray(5, "meow")
-			* 3-arg: sized range construction	e.g. DynamicArray{"Hello", "Fluffy", "World"}
+			* 3-arg: sized range construction	e.g. DynamicArray({"Hello", "Fluffy", "World"})
 		*/
 		if (count == 0) {
 			return;
@@ -846,7 +774,7 @@ private:
 
 		this->_allocate(count);
 
-		_ArrayConstructGuard<_MyVal> guard(_data);
+		_ArrayConstructGuard<_MyVal> guard(std::addressof(_data));
 		if constexpr (sizeof...(Args) == 0) {
 			myLast = memory::uninitialized_default_construct_n(myFirst, count);
 		}
@@ -854,8 +782,7 @@ private:
 			myLast = memory::uninitialized_fill_n(myFirst, count, std::forward<Args>(args)...);
 		}
 		else if constexpr (sizeof...(Args) == 2) {
-			const auto [_, out] = memory::uninitialized_copy(std::forward<Args>(args)..., myFirst, myFirst + count);
-			myLast = out;
+			myLast = memory::uninitialized_copy(std::forward<Args>(args)..., myFirst, myFirst + count).out;
 		}
 		else {
 			static_assert(false, "Unexpected number of arguments");
@@ -879,15 +806,28 @@ private:
 		myEnd	= newFirst + newCapacity;
 	}
 
+	constexpr size_type _calculate_growth(const size_type newSize) const {
+		// Given newSize, calculate geometric growth
+		const auto maxSize		= this->max_size();
+		const auto oldCapacity	= this->capacity();
+		if (oldCapacity > maxSize - oldCapacity / 2) {
+			return maxSize; // Geometric growth would overflow
+		}
+
+		const auto newCapacity = oldCapacity + oldCapacity / 2;
+		if (newCapacity < newSize) {
+			return newSize; // Geometric growth would be insufficient
+		}
+		return newCapacity; // Geometric growth is sufficient
+	}
+
 	template<class... Args>
 	constexpr T& _emplace_back_with_unused_capacity(Args&&... args) {
 		// Insert by perfectly forwarding into element at end
 		pointer& myLast = _data.last;
 
 		memory::construct_at(myLast, std::forward<Args>(args)...);
-		
-		T& result = *myLast;
-		++myLast;
+		T& result = *myLast++;
 		return result;
 	}
 
@@ -904,20 +844,35 @@ private:
 		}
 
 		const auto newSize			= oldSize + 1;
-		const auto newCapacity		= this->_calculate_growth(newSize);
-		const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
+		const auto newCapacity		= this->_calculate_growth(newSize); // Calculate new capacity for array growth
+		const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T))); // Allocate new array
 		const auto constructedLast	= newFirst + offset + 1;
-
+		// Set up guard
 		_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, constructedLast, constructedLast);
-
 		memory::construct_at(newFirst + offset, std::forward<Args>(args)...);
 		guard.constructedFirst = newFirst + offset;
+		// Transfer elements into new array
+		if (where == myLast) { // At back
+			/*
+			Move construction is faster than copy construction, but it only provides the basic guarantee.
+			If an exception occurs partway through, the elements already moved into the new array cannot
+			be rolled back(*), and the old array cannot be restored to its original state.
 
-		if (where == myLast) {
-			if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+			(*): One might try to fix it by moving elements back into the old array, but that rollback
+			uses the same move operations that just threw — so it may throw again. A guarantee is only
+			"strong" if the rollback itself cannot fail.
+			
+			Copy construction never touches the old array during the process, so on exception we can simply
+			discard the new array and roll back safely, giving the strong guarantee. The only downside is
+			performance: copying can be slow when T is large or heavy.
+
+			Unless T's move constructor is noexcept, or T cannot be copy constructed at all, we accept this
+			tradeoff and favor the strong exception guarantee.
+			*/
+			if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) { // Basic guarantee
 				memory::uninitialized_move(myFirst, myLast, newFirst, newFirst + oldSize);
 			}
-			else {
+			else { // Strong guarantee when copy is possible
 				memory::uninitialized_copy(myFirst, myLast, newFirst, newFirst + oldSize);
 			}
 		}
@@ -928,117 +883,27 @@ private:
 			const auto newOffset = newFirst + offset;
 			memory::uninitialized_move(where, myLast, newOffset + 1, newOffset + 1 + (myLast - where));
 		}
-		guard.release();
+		guard.release(); // Guard has finished
 
 		this->_change_array(newFirst, newSize, newCapacity);
 		return newFirst + offset;
 	}
 
 	template<class... Args>
-	constexpr T& _emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding into element at end
-		if (_data.last != _data.end) {
-			return this->_emplace_back_with_unused_capacity(std::forward<Args>(args)...);
-		}
-		return *this->_emplace_reallocate(_data.last, std::forward<Args>(args)...);
-	}
-
-	template<class It, class Se>
-	constexpr void _append_uncounted_range(It first, const Se last) {
-		// Insert uncounted range [first, last) at end
-		for (; first != last; ++first) {
-			this->_emplace_back(*first); // If one at back, provide strong guarantee. Otherwise, provide basic guarantee
-		}
-	}
-
-	constexpr size_type _calculate_growth(const size_type newSize) const {
-		// Given newSize, calculate geometric growth
-		const auto oldCapacity	= this->capacity();
-		const auto maxSize		= this->max_size();
-		if (oldCapacity > maxSize - oldCapacity / 2) {
-			return maxSize; // Geometric growth would overflow
+	constexpr pointer _insert(pointer where, const size_type count, const Args&... args) {
+		// Insert count elements constructed from args at where
+		if (count == 0) { // Do nothing, iterators won't be invalidated
+			return where;
 		}
 
-		const auto newCapacity = oldCapacity + oldCapacity / 2;
-		if (newCapacity < newSize) {
-			return newSize; // Geometric growth would be insufficient
-		}
-		return newCapacity; // Geometric growth is sufficient
-	}
-
-	constexpr void _reallocate(const size_type newCapacity) {
-		// Reallocate new array with newCapacity
-		pointer& myFirst	= _data.first;
-		pointer& myLast		= _data.last;
-
-		const auto size		= this->size();
-		const auto newFirst = static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
-
-		_ArrayReallocateGuard<_MyVal> guard(newCapacity, newFirst);
-		if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
-			memory::uninitialized_move(myFirst, myLast, newFirst, newFirst + size);
-		}
-		else {
-			memory::uninitialized_copy(myFirst, myLast, newFirst, newFirst + size);
-		}
-		guard.release();
-
-		this->_change_array(newFirst, this->size(), newCapacity);
-	}
-
-	constexpr void _clear_reallocate(const size_type newSize) {
-		// Clear and reallocate new array that grows to fit newSize
-		pointer& myFirst	= _data.first;
-		pointer& myLast		= _data.last;
-		pointer& myEnd		= _data.end;
-
-		if (newSize > this->max_size()) {
-			this->_length_error();
-		}
-
-		const auto newCapacity = this->_calculate_growth(newSize); // Calculate growth before myEnd is reset
-
-		if (myFirst) { // Destruct and deallocate old array
-			memory::destruct(myFirst, myLast);
-			memory::deallocate(myFirst, this->capacity() * sizeof(T));
-
-			myFirst	= nullptr;
-			myLast	= nullptr;
-			myEnd	= nullptr;
-		}
-		this->_allocate(newCapacity);
-	}
-
-	template<class It, class Se>
-	constexpr void _insert_uncounted_range(const_iterator where, It first, Se last) {
-		// Insert unknown number of elements from [first, last) at where
-		if (first == last) {
-			return;
-		}
-
-		pointer& myFirst	= _data.first;
-		pointer& myLast		= _data.last;
-
-		const auto offset	= static_cast<size_type>(where.ptr - myFirst);
-		const auto size		= this->size();
-
-		this->_append_uncounted_range(std::move(first), std::move(last));
-		std::rotate(myFirst + offset, myFirst + size, myLast);
-	}
-
-	template<class It>
-	constexpr void _insert_counted_range(const_iterator where, It first, const size_type count) {
-		// Insert elements from counted range [first, first + count) at where
 		pointer& myLast = _data.last;
-		
-		const pointer wherePtr	= where.ptr;
+
 		const pointer oldFirst	= _data.first;
 		const pointer oldLast	= _data.last;
 
-		const auto offset			= static_cast<size_type>(wherePtr - oldFirst);
-		const auto unusedCapacity	= static_cast<size_type>(_data.end - oldLast);
-		const bool oneAtBack		= count == 1 && wherePtr == oldLast;
-		if (count > unusedCapacity) { // Reallocate
+		const auto offset		= static_cast<size_type>(where - oldFirst);
+		const bool oneAtBack	= count == 1 && where == oldLast;
+		if (count > this->unused_capacity()) { // Reallocate
 			const auto oldSize = this->size();
 			if (count > this->max_size() - oldSize) {
 				this->_length_error();
@@ -1050,8 +915,12 @@ private:
 			const auto constructedLast	= newFirst + offset + count;
 
 			_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, constructedLast, constructedLast);
-
-			memory::uninitialized_copy_n(std::move(first), count, newFirst + offset, newFirst + offset + count);
+			if constexpr (sizeof...(args) != 0) {
+				memory::uninitialized_fill_n(newFirst + offset, count, args...);
+			}
+			else {
+				memory::uninitialized_value_construct_n(newFirst + offset, count);
+			}
 			guard.constructedFirst = newFirst + offset;
 
 			if (oneAtBack) {
@@ -1063,16 +932,112 @@ private:
 				}
 			}
 			else {
-				memory::uninitialized_move(oldFirst, wherePtr, newFirst, newFirst + offset);
+				memory::uninitialized_move(oldFirst, where, newFirst, newFirst + offset);
 				guard.constructedFirst = newFirst;
-				memory::uninitialized_move(wherePtr, oldLast, newFirst + offset + count, newFirst + newSize);
+				memory::uninitialized_move(where, oldLast, newFirst + offset + count, newFirst + newSize);
 			}
 			guard.release();
 
 			this->_change_array(newFirst, newSize, newCapacity);
 		}
-		else if (count == 0) {
-			// Do nothing
+		else if (oneAtBack) {
+			this->_emplace_back_with_unused_capacity(args...);
+		}
+		else {
+			// Handle aliasing with temporary object guard
+			const memory::_TempObjectGuard<T> guard(args...);
+			const auto& object = guard.get_object();
+
+			const auto affected = static_cast<size_type>(oldLast - where);
+			if (count > affected) {
+				// Fill (count - affected) * val into [oldLast, oldLast + count - affected), potentially uninitialized memory
+				myLast = memory::uninitialized_fill_n(oldLast, count - affected, object);
+				// Shift range [where, oldLast) to the right by count offset, potentially uninitialized memory
+				myLast = memory::uninitialized_move(where, oldLast, where + count, oldLast + count).out;
+				// Fill affected * val into [where, oldLast)
+				memory::fill(where, oldLast, object);
+			}
+			else {
+				// Shift range [oldLast - count, oldLast) to the right by count offset, potentially uninitialized memory
+				myLast = memory::uninitialized_move(oldLast - count, oldLast, oldLast, oldLast + count).out;
+				// Shift range [where, oldLast - count) backward to the right by count offset (shift backward to avoid overlap)
+				memory::move_backward(where, oldLast - count, oldLast);
+				// Fill count * val into [where, where + count)
+				memory::fill_n(where, count, object);
+			}
+		}
+		return _data.first + offset;
+	}
+
+	template<class It, class Se>
+	constexpr void _append_uncounted_range(It first, const Se last) {
+		// Insert uncounted range [first, last) at end
+		for (; first != last; ++first) {
+			this->emplace_back(*first); // If one at back, provide strong guarantee. Otherwise, provide basic guarantee
+		}
+	}
+
+	template<class It, class Se>
+	constexpr void _insert_uncounted_range(pointer where, It first, Se last) {
+		// Insert unknown number of elements from [first, last) at where
+		if (first == last) {
+			return;
+		}
+
+		pointer& myFirst	= _data.first;
+		pointer& myLast		= _data.last;
+
+		const auto offset	= static_cast<size_type>(where - myFirst);
+		const auto oldSize	= this->size();
+
+		this->_append_uncounted_range(std::move(first), std::move(last));
+		std::rotate(myFirst + offset, myFirst + oldSize, myLast);
+	}
+
+	template<class It>
+	constexpr void _insert_counted_range(pointer where, It first, const size_type count) {
+		// Insert elements from counted range [first, first + count) at where
+		if (count == 0) { // Do nothing
+			return;
+		}
+
+		pointer& myLast = _data.last;
+
+		const pointer oldFirst	= _data.first;
+		const pointer oldLast	= _data.last;
+
+		const auto offset = static_cast<size_type>(where - oldFirst);
+		if (count > this->unused_capacity()) { // Reallocate
+			const auto oldSize = this->size();
+			if (count > this->max_size() - oldSize) {
+				this->_length_error();
+			}
+
+			const auto newSize			= oldSize + count;
+			const auto newCapacity		= this->_calculate_growth(newSize);
+			const auto newFirst			= static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
+			const auto constructedLast	= newFirst + offset + count;
+
+			_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, constructedLast, constructedLast);
+			memory::uninitialized_copy_n(std::move(first), count, newFirst + offset, newFirst + offset + count);
+			guard.constructedFirst = newFirst + offset;
+
+			if (count == 1 && where == oldLast) { // One at back
+				if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+					memory::uninitialized_move(oldFirst, oldLast, newFirst, newFirst + oldSize);
+				}
+				else {
+					memory::uninitialized_copy(oldFirst, oldLast, newFirst, newFirst + oldSize);
+				}
+			}
+			else {
+				memory::uninitialized_move(oldFirst, where, newFirst, newFirst + offset);
+				guard.constructedFirst = newFirst;
+				memory::uninitialized_move(where, oldLast, newFirst + offset + count, newFirst + newSize);
+			}
+			guard.release();
+
+			this->_change_array(newFirst, newSize, newCapacity);
 		}
 		else {
 			/*
@@ -1081,17 +1046,16 @@ private:
 				- insert(where, count, val) requires T to be CopyAssignable and CopyInsertable
 
 			Thus, we need to turn range [where, where + count) into raw memory, then construct by copying from
-			[first, first + count), instead of assigning directly.
+			range [first, first + count), instead of assigning directly.
 			*/
-			const auto affected = static_cast<size_type>(oldLast - wherePtr);
+			const auto affected = static_cast<size_type>(oldLast - where);
 			if (count >= affected) {
 				// Shift the affected range to the right by count offset, potentially uninitialized memory
-				const auto [_, out] = memory::uninitialized_move(wherePtr, oldLast, wherePtr + count, wherePtr + count + affected);
-				myLast = out;
-				// Try to construct by copying [first, first + count) into [wherePtr, wherePtr + count), uninitialized memory
-				memory::destruct(wherePtr, oldLast);
+				myLast = memory::uninitialized_move(where, oldLast, where + count, where + count + affected).out;
+				// Try to construct by copying [first, first + count) into [where, where + count), uninitialized memory
+				memory::destruct(where, oldLast);
 				try {
-					memory::uninitialized_copy_n(std::move(first), count, wherePtr, wherePtr + count);
+					memory::uninitialized_copy_n(std::move(first), count, where, where + count);
 				}
 				catch (...) {
 					/*
@@ -1099,14 +1063,13 @@ private:
 
 					VaporizedGuard is used to guard against double failure, which would leave the array in an invalid state.
 
-					When this happens, all elements from [wherePtr, oldLast + count) will be vaporized. Due to double failure
+					When this happens, all elements from [where, oldLast + count) will be vaporized. Due to double failure
 					(fail to rollback a rollback), we can no longer provide strong guarantee. The least we can do is to make
 					sure the array is in a valid state, by vaporizing all elements in the affected range.
 					*/
-
-					// Shift the affected range back into [wherePtr, oldLast), uninitialized memory
-					_ArrayVaporizeGuard<_MyVal> guard(_data, wherePtr, wherePtr + count);
-					memory::uninitialized_move(wherePtr + count, myLast, wherePtr, oldLast);
+					// Shift the affected range back into [where, oldLast), uninitialized memory
+					_ArrayVaporizeGuard<_MyVal> guard(std::addressof(_data), where, where + count);
+					memory::uninitialized_move(where + count, myLast, where, oldLast);
 					guard.release();
 					// Turn range [oldLast, oldLast + count) back into raw memory
 					memory::destruct(oldLast, myLast);
@@ -1116,22 +1079,21 @@ private:
 			}
 			else {
 				// Shift range [oldLast - count, oldLast) to the right by count offset, potentially uninitialized memory
-				const auto [_, out] = memory::uninitialized_move(oldLast - count, oldLast, oldLast, oldLast + count);
-				myLast = out;
-				// Shift range [wherePtr, oldLast - count) backward to the right by count offset
-				memory::move_backward(wherePtr, oldLast - count, oldLast);
+				myLast = memory::uninitialized_move(oldLast - count, oldLast, oldLast, oldLast + count).out;
+				// Shift range [where, oldLast - count) backward to the right by count offset
+				memory::move_backward(where, oldLast - count, oldLast);
 				
-				memory::destruct(wherePtr, wherePtr + count);
+				memory::destruct(where, where + count);
 				try {
-					memory::uninitialized_copy_n(std::move(first), count, wherePtr, wherePtr + count);
+					memory::uninitialized_copy_n(std::move(first), count, where, where + count);
 				}
 				catch (...) {
-					// Shift the first count elements of the affected range back into [wherePtr, wherePtr + count)
-					_ArrayVaporizeGuard<_MyVal> guard(_data, wherePtr, wherePtr + count);
-					memory::uninitialized_move(wherePtr + count, wherePtr + 2 * count, wherePtr, wherePtr + count);
+					// Shift the first count elements of the affected range back into [where, where + count)
+					_ArrayVaporizeGuard<_MyVal> guard(std::addressof(_data), where, where + count);
+					memory::uninitialized_move(where + count, where + 2 * count, where, where + count);
 					guard.release();
-					// Shift the remaining elements back into [wherePtr + count, oldLast)
-					memory::move(wherePtr + 2 * count, myLast, wherePtr + count);
+					// Shift the remaining elements back into [where + count, oldLast)
+					memory::move(where + 2 * count, myLast, where + count);
 
 					memory::destruct(oldLast, myLast);
 					myLast = oldLast;
@@ -1142,25 +1104,87 @@ private:
 	}
 
 	template<class It, class Se>
+	constexpr pointer _insert_range(pointer where, It first, Se last) {
+		// Insert range [first, last) at where
+		const auto offset = static_cast<size_type>(where.ptr - _data.first);
+		if constexpr (std::forward_iterator<It>) {
+			const auto count = static_cast<size_type>(std::distance(first, std::move(last)));
+			this->_insert_counted_range(where.ptr, std::move(first), count);
+		}
+		else {
+			this->_insert_uncounted_range(where.ptr, std::move(first), std::move(last));
+		}
+		return _data.first + offset;
+	}
+
+	constexpr void _clear_reallocate(const size_type newSize) {
+		// Clear and reallocate new array that grows to fit newSize
+		if (newSize > this->max_size()) {
+			this->_length_error();
+		}
+
+		const auto newCapacity = this->_calculate_growth(newSize); // Calculate growth before myEnd is reset
+		
+		this->clear();
+		this->_allocate(newCapacity);
+	}
+
+	template<class OtherT>
+	constexpr void _assign(const size_type count, const OtherT& arg) {
+		// Assign count elements constructed from arg
+		pointer& myFirst	= _data.first;
+		pointer& myLast		= _data.last;
+
+		if (count > this->capacity()) { // Reallocate
+			this->_clear_reallocate(count);
+			if constexpr (std::is_same_v<T, OtherT>) {
+				myLast = memory::uninitialized_fill_n(myFirst, count, arg);
+			}
+			else {
+				myLast = memory::uninitialized_value_construct_n(myFirst, count);
+			}
+			return;
+		}
+
+		const auto oldSize = this->size();
+		if (count < oldSize) { // Fill and trim
+			const pointer newLast = myFirst + count;
+			if constexpr (std::is_same_v<T, OtherT>) {
+				memory::fill(myFirst, newLast, arg);
+			}
+			else {
+				memory::fill(myFirst, newLast, T{});
+			}
+			memory::destruct(newLast, myLast);
+			myLast = newLast;
+		}
+		else { // Fill and append
+			if constexpr (std::is_same_v<T, OtherT>) {
+				memory::fill(myFirst, myLast, arg);
+				myLast = memory::uninitialized_fill_n(myLast, count - oldSize, arg);
+			}
+			else {
+				memory::fill(myFirst, myLast, T{});
+				myLast = memory::uninitialized_value_construct_n(myLast, count - oldSize);
+			}
+		}
+	}
+
+	template<class It, class Se>
 	constexpr void _assign_uncounted_range(It first, Se last) {
 		// Assign unknown number of elements from [first, last)
 		pointer& myLast = _data.last;
-
+		// Reuse current elements
 		pointer current = _data.first;
 		for (; first != last && current != myLast; ++first, ++current) {
 			*current = *first;
 		}
-
-		/*
-		- If exhausted only the source: Trim, then Append does nothing
-		- If exhausted only the dest:	Append, then Trim does nothing
-		- If exhausted both ranges:		Trim does nothing, then Append does nothing
-		*/
-		
 		// Trim
-		memory::destruct(current, myLast);
-		myLast = current;
-
+		if (first == last) {
+			memory::destruct(current, myLast);
+			myLast = current;
+			return;
+		}
 		// Append
 		this->_append_uncounted_range(std::move(first), std::move(last));
 	}
@@ -1174,8 +1198,7 @@ private:
 
 		if (newSize > this->capacity()) {
 			this->_clear_reallocate(newSize);
-			const auto [_, out] = memory::uninitialized_copy_n(std::move(first), newSize, myFirst, myFirst + newSize);
-			myLast = out;
+			myLast = memory::uninitialized_copy_n(std::move(first), newSize, myFirst, myFirst + newSize).out;
 			return;
 		}
 
@@ -1184,21 +1207,21 @@ private:
 			bool isCopied = false;
 			if constexpr (traits::iter_copy_category<It, pointer>::is_bitcopy_assignable) {
 				if (!std::is_constant_evaluated()) {
-					memory::_copy_memmove_n(first, myFirst, static_cast<std::size_t>(oldSize));
+					memory::_copy_memmove_n(first, myFirst, oldSize);
 					first += oldSize;
 					isCopied = true;
 				}
 			}
 
 			if (!isCopied) {
-				for (auto current = myFirst; current != myLast; ++current, ++first) {
+				for (pointer current = myFirst; current != myLast; ++current, ++first) {
 					*current = *first;
 				}
 			}
 
-			const auto remaining = newSize - oldSize;
-			const auto [_, out] = memory::uninitialized_copy_n(std::move(first), remaining, myLast, myLast + remaining);
-			myLast = out;
+			myLast = memory::uninitialized_copy_n(
+				std::move(first), newSize - oldSize, myLast, myLast + newSize - oldSize
+			).out;
 			return;
 		}
 		else {
@@ -1225,7 +1248,6 @@ private:
 		const auto appendedFirst	= newFirst + oldSize;
 
 		_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, appendedFirst, appendedFirst);
-
 		if constexpr (std::is_same_v<T, OtherT>) {
 			guard.constructedLast = memory::uninitialized_fill_n(appendedFirst, newSize - oldSize, val);
 		}
@@ -1245,13 +1267,14 @@ private:
 	}
 
 	template<class OtherT>
-	constexpr void _resize(const size_type newSize, const OtherT& val) {
-		// Trim or append elements, provide strong guarantee
+	constexpr void _resize(const size_type newSize, const OtherT& arg) {
+		// Trim or append elements constructed from arg to reach newSize, provide strong guarantee
 		pointer& myFirst	= _data.first;
 		pointer& myLast		= _data.last;
 
 		const auto oldSize = this->size();
 		if (newSize < oldSize) { // Trim
+			// Resize(0) erases all elements but keep allocated memory
 			const pointer newLast = myFirst + newSize;
 			memory::destruct(newLast, myLast);
 			myLast = newLast;
@@ -1260,13 +1283,13 @@ private:
 
 		if (newSize > oldSize) { // Append
 			if (newSize > this->capacity()) { // Reallocate
-				this->_resize_reallocate(newSize, val);
+				this->_resize_reallocate(newSize, arg);
 				return;
 			}
 
 			const pointer oldLast = myLast;
 			if constexpr (std::is_same_v<T, OtherT>) {
-				myLast = memory::uninitialized_fill_n(oldLast, newSize - oldSize, val);
+				myLast = memory::uninitialized_fill_n(oldLast, newSize - oldSize, arg);
 			}
 			else {
 				myLast = memory::uninitialized_value_construct_n(oldLast, newSize - oldSize);
@@ -1274,6 +1297,26 @@ private:
 		}
 
 		// If newSize == oldSize, do nothing, iterators won't be invalidated
+	}
+
+	constexpr void _reallocate(const size_type newCapacity) {
+		// Reallocate new array with newCapacity
+		pointer& myFirst	= _data.first;
+		pointer& myLast		= _data.last;
+
+		const auto oldSize	= this->size();
+		const auto newFirst = static_cast<pointer>(memory::allocate(newCapacity, sizeof(T)));
+
+		_ArrayReallocateGuard<_MyVal> guard(newCapacity, newFirst);
+		if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
+			memory::uninitialized_move(myFirst, myLast, newFirst, newFirst + oldSize);
+		}
+		else {
+			memory::uninitialized_copy(myFirst, myLast, newFirst, newFirst + oldSize);
+		}
+		guard.release();
+
+		this->_change_array(newFirst, oldSize, newCapacity);
 	}
 
 	[[noreturn]] static void _length_error() {

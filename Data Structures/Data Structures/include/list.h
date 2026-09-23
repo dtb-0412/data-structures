@@ -158,6 +158,7 @@ struct _ListValue {
 		: head(), size(0) {}
 	
 	void clear_non_head() noexcept {
+		// Erase all elements, excluding head sentinel
 		head->prev->next = nullptr; // Remove circular link
 
 		for (node_pointer currNode = head->next; currNode;) {
@@ -178,6 +179,12 @@ struct _ListValue {
 		swap(size, other.size);
 	}
 
+	/*
+		Sentinel node, linking both ends of list to form a circular structure
+
+		head->next:	points to the first node
+		head->prev:	points to the last node
+	*/
 	node_pointer	head;
 	size_type		size;
 };
@@ -190,8 +197,8 @@ struct _ListInsertGuard {
 	using value_type	= typename ListVal::value_type;
 	using size_type		= typename ListVal::size_type;
 
-	_ListInsertGuard(ListVal& data) noexcept
-		: data(std::addressof(data)), head(), tail(), inserted(0) {}
+	_ListInsertGuard(ListVal* ptr) noexcept
+		: ptr(ptr), head(), tail(), inserted(0) {}
 
 	_ListInsertGuard(const _ListInsertGuard&)				= delete;
 	_ListInsertGuard& operator=(const _ListInsertGuard&)	= delete;
@@ -204,14 +211,16 @@ struct _ListInsertGuard {
 		memory::construct_at(std::addressof(head->prev), node_pointer{});
 		memory::construct_at(std::addressof(tail->next), node_pointer{});
 		while (head) {
-			node_type::free_node(std::exchange(head, head->next));
+			const node_pointer nextNode = head->next;
+			node_type::free_node(head);
+			head = nextNode;
 		}
 	}
 
 	template<class... Args>
 	void append_n(size_type count, const Args&... args) {
 		// Append count elements by constructing in place using args
-		if (count <= 0) {
+		if (count == 0) {
 			return;
 		}
 
@@ -273,37 +282,41 @@ struct _ListInsertGuard {
 
 		memory::construct_at(std::addressof(head->prev), node->prev);
 		node->prev->next = head;
+		
 		memory::construct_at(std::addressof(tail->next), node);
 		node->prev = tail;
 
-		data->size += std::exchange(inserted, 0);
+		ptr->size += std::exchange(inserted, 0);
 		return head;
 	}
 
-	void attach_at_end() noexcept {
-		this->attach_before(data->head);
-	}
-
 	void attach_head() {
+		// Attach elements in *this at the beginning
+		// Construct head sentinel
 		memory::_NodeAllocateGuard<node_type> guard;
-		guard.allocate();
+		guard.allocate(); // Sentinel is an empty node
 		
 		if (inserted == 0) {
 			memory::construct_at(std::addressof(guard.node->next), guard.node);
 			memory::construct_at(std::addressof(guard.node->prev), guard.node);
 		}
-		else {
+		else { // Attach nodes in *this to sentinel
 			memory::construct_at(std::addressof(guard.node->next), head);
 			memory::construct_at(std::addressof(guard.node->prev), tail);
 			memory::construct_at(std::addressof(head->prev), guard.node);
 			memory::construct_at(std::addressof(tail->next), guard.node);
 		}
 
-		data->head = guard.release();
-		data->size = std::exchange(inserted, 0);
+		ptr->head = guard.release();
+		ptr->size = std::exchange(inserted, 0);
 	}
 
-	ListVal*		data;
+	void attach_at_end() noexcept {
+		// Attach elements in *this at the end
+		this->attach_before(ptr->head);
+	}
+
+	ListVal*		ptr;
 	node_pointer	head;		// Points to the first constructed node
 	node_pointer	tail;		// Points to the most recently constructed node
 	size_type		inserted;	// Number of inserted nodes
@@ -315,8 +328,8 @@ struct _ListRemoveGuard {
 	using node_type		= typename ListVal::node_type;
 	using node_pointer	= typename node_type::node_pointer;
 
-	_ListRemoveGuard(ListVal& data) noexcept
-		: data(std::addressof(data)), head(), tail(std::addressof(head)) {}
+	_ListRemoveGuard(ListVal* ptr) noexcept
+		: ptr(ptr), head(), tail(std::addressof(head)) {}
 
 	_ListRemoveGuard(const _ListRemoveGuard&)				= delete;
 	_ListRemoveGuard& operator=(const _ListRemoveGuard&)	= delete;
@@ -330,21 +343,20 @@ struct _ListRemoveGuard {
 	}
 
 	node_pointer extract(node_pointer node) noexcept {
-		// Extract node from the list and add it to the remove queue
 		const node_pointer nextNode = std::exchange(node->next, nullptr);
 		const node_pointer prevNode = node->prev;
 
 		prevNode->next = nextNode;
 		nextNode->prev = prevNode;
 
-		--data->size;
+		--ptr->size;
 
 		*tail	= node;
 		tail	= std::addressof(node->next);
 		return nextNode;
 	}
 
-	ListVal*		data;
+	ListVal*		ptr;
 	node_pointer	head;
 	node_pointer*	tail;
 };
@@ -381,38 +393,28 @@ public:
 
 	explicit List(const size_type count)
 		: _data() {
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_n(count);
-		guard.attach_head();
+		this->_construct_n(count);
 	}
 
-	List(const size_type count, const T& value)
+	List(const size_type count, const T& val)
 		: _data() {
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_n(count, value);
-		guard.attach_head();
+		this->_construct_n(count, val);
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	List(It first, Se last)
 		: _data() {
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_range(std::move(first), std::move(last));
-		guard.attach_head();
+		this->_construct_range(std::move(first), std::move(last));
 	}
 
 	List(std::initializer_list<T> initList)
 		: _data() {
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_range(initList.begin(), initList.end());
-		guard.attach_head();
+		this->_construct_range(initList.begin(), initList.end());
 	}
 
 	List(const List& other)
 		: _data() {
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_range(other.begin(), other.end());
-		guard.attach_head();
+		this->_construct_range(other.begin(), other.end());
 	}
 
 	List(List&& other) noexcept
@@ -427,7 +429,7 @@ public:
 
 	List& operator=(const List& other) {
 		if (this != std::addressof(other)) {
-			this->assign(other.begin(), other.end());
+			this->_assign_range(other.begin(), other.end());
 		}
 		return *this;
 	}
@@ -441,7 +443,7 @@ public:
 	}
 
 	List& operator=(std::initializer_list<T> initList) {
-		this->assign(initList.begin(), initList.end());
+		this->_assign_range(initList.begin(), initList.end());
 		return *this;
 	}
 
@@ -524,6 +526,24 @@ public:
 		);
 	}
 
+	template<class... Args>
+	iterator emplace(const_iterator where, Args&&... args) {
+		// Insert by perfectly forwarding args at where
+		return iterator(this->_emplace(where.ptr, std::forward<Args>(args)...));
+	}
+
+	template<class... Args>
+	reference emplace_front(Args&&... args) {
+		// Insert by perfectly forwarding args at beginning
+		return this->_emplace(_data.head->next, std::forward<Args>(args)...)->value;
+	}
+
+	template<class... Args>
+	reference emplace_back(Args&&... args) {
+		// Insert by perfectly forwarding args at end
+		return this->_emplace(_data.head, std::forward<Args>(args)...)->value;
+	}
+
 	void push_front(const T& val) {
 		// Insert by copying val at beginning
 		this->_emplace(_data.head->next, val);
@@ -544,24 +564,6 @@ public:
 		this->_emplace(_data.head, std::move(val));
 	}
 
-	template<class... Args>
-	iterator emplace(const_iterator where, Args&&... args) {
-		// Insert by perfectly forwarding args into element at where
-		return iterator(this->_emplace(where.ptr, std::forward<Args>(args)...));
-	}
-
-	template<class... Args>
-	reference emplace_front(Args&&... args) {
-		// Insert by perfectly forwarding args into element at beginning
-		return this->_emplace(_data.head->next, std::forward<Args>(args)...)->value;
-	}
-
-	template<class... Args>
-	reference emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding args into element at end
-		return this->_emplace(_data.head, std::forward<Args>(args)...)->value;
-	}
-
 	iterator insert(const_iterator where, const T& val) {
 		// Insert by moving val at where
 		return this->emplace(where, val);
@@ -572,65 +574,88 @@ public:
 		return this->emplace(where, std::move(val));
 	}
 
+	iterator insert(const_iterator where, const size_type count) {
+		// Insert count * value-initialized at where
+		return iterator(this->_insert(where.ptr, count));
+	}
+
 	iterator insert(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val at where
-		if (count == 0) {
-			return iterator(where.ptr);
-		}
-
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_n(count, val);
-		return iterator(guard.attach_before(where.ptr));
+		return iterator(this->_insert(where.ptr, count, val));
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	iterator insert(const_iterator where, It first, Se last) {
 		// Insert range [first, last) at where
-		if (first == last) {
-			return iterator(where.ptr);
-		}
-
-		_ListInsertGuard<_MyVal> guard(_data);
-		guard.append_range(std::move(first), std::move(last));
-		return iterator(guard.attach_before(where.ptr));
+		return iterator(this->_insert_range(where.ptr, std::move(first), std::move(last)));
 	}
 
 	iterator insert(const_iterator where, std::initializer_list<T> initList) {
-		// Insert range [initList.begin(), initList.end())
-		return this->insert(where, initList.begin(), initList.end());
+		// Insert initList at where
+		return iterator(this->_insert_range(where.ptr, initList.begin(), initList.end()));
+	}
+
+	iterator prepend(const size_type count) {
+		// Prepend count * value-initialized
+		return iterator(this->_insert(_data.head->next, count));
+	}
+
+	iterator prepend(const size_type count, const T& val) {
+		// Prepend count * val
+		return iterator(this->_insert(_data.head->next, count, val));
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	iterator prepend(It first, Se last) {
+		// Prepend range [first, last)
+		return iterator(this->_insert_range(_data.head->next, std::move(first), std::move(last)));
+	}
+
+	iterator prepend(std::initializer_list<T> initList) {
+		// Prepend initList
+		return iterator(this->_insert_range(_data.head->next, initList.begin(), initList.end()));
+	}
+
+	iterator append(const size_type count) {
+		// Append count * value-initialized
+		return iterator(this->_insert(_data.head, count));
+	}
+
+	iterator append(const size_type count, const T& val) {
+		// Append count * val
+		return iterator(this->_insert(_data.head, count, val));
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	iterator append(It first, Se last) {
+		// Append range [first, last)
+		return iterator(this->_insert_range(_data.head, std::move(first), std::move(last)));
+	}
+
+	iterator append(std::initializer_list<T> initList) {
+		// Append initList
+		return iterator(this->_insert_range(_data.head, initList.begin(), initList.end()));
+	}
+
+	void assign(const size_type count) {
+		// Assign count * value-initialized
+		this->_assign(count);
 	}
 
 	void assign(const size_type count, const T& val) {
 		// Assign count * val
-		const _NodePointer lastNode = _data.head;
-		for (_NodePointer currNode = lastNode->next;;) {
-			if (currNode == lastNode) {
-				_ListInsertGuard<_MyVal> guard(_data);
-				guard.append_n(count, val);
-				guard.attach_at_end();
-				return;
-			}
-
-			if (count == 0) {
-				this->_erase(currNode, lastNode);
-				return;
-			}
-
-			currNode->value = val;
-			currNode = currNode->next;
-			--count;
-		}
+		this->_assign(count, val);
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	void assign(It first, Se last) {
 		// Assign range [first, last)
-		this->_assign(std::move(first), std::move(last));
+		this->_assign_range(std::move(first), std::move(last));
 	}
 
 	void assign(std::initializer_list<T> initList) {
-		// Assign range [initList.begin(), initList.end())
-		this->assign(initList.begin(), initList.end());
+		// Assign initList
+		this->_assign_range(initList.begin(), initList.end());
 	}
 
 	void pop_front() noexcept {
@@ -669,12 +694,22 @@ public:
 		}
 	}
 
+	void resize(const size_type newSize) {
+		// Trim or append value-initialized elements to reach newSize
+		this->_resize(newSize);
+	}
+
+	void resize(const size_type newSize, const T& val) {
+		// Trim or append copies of val to reach newSize
+		this->_resize(newSize, val);
+	}
+
 	void splice(const_iterator where, List& other) {
 		// Splice all of other at where
-		auto& otherData = other._data;
-		if (this != std::addressof(other) && otherData.size != 0) {
-			const auto otherHead = otherData.head;
-			this->_splice(where.ptr, other, otherHead->next, otherHead, otherData.size);
+		const auto otherSize = other._data.size;
+		if (this != std::addressof(other) && otherSize != 0) {
+			const _NodePointer otherHead = other._data.head;
+			this->_splice(where.ptr, other, otherHead->next, otherHead, otherSize);
 		}
 	}
 
@@ -706,7 +741,7 @@ public:
 		if (firstNode != lastNode && (this != std::addressof(other) || whereNode != lastNode)) {
 			size_type count = 0;
 			if (this != std::addressof(other)) {
-				const auto otherLast = other._data.head;
+				const _NodePointer otherLast = other._data.head;
 				if (firstNode == otherLast->next && lastNode == otherLast) {
 					count = other._data.size; // Splice whole other
 				}
@@ -716,7 +751,6 @@ public:
 					}
 				}
 			}
-
 			this->_splice(whereNode, other, firstNode, lastNode, count);
 		}
 	}
@@ -728,12 +762,12 @@ public:
 
 	size_type remove(const T& val) {
 		// Erase all elements matching val
-		return this->remove_if([&](const T& other) -> bool { return other == val; }, this->begin(), this->end());
+		return this->remove(val, this->begin(), this->end());
 	}
 
 	size_type remove(const T& val, const_iterator first, const_iterator last) {
 		// Erase all elements matching val in range [first, last)
-		return this->remove_if([&](const T& other) -> bool { return other == val; }, first, last);
+		return this->_remove_if([&](const T& other) -> bool { return other == val; }, first.ptr, last.ptr);
 	}
 
 	template<class UnaryPred>
@@ -745,7 +779,7 @@ public:
 	template<class UnaryPred>
 	size_type remove_if(UnaryPred pred, const_iterator first, const_iterator last) {
 		// Erase all elements matching pred in range [first, last)
-		return this->_remove_if(pred, first, last);
+		return this->_remove_if(pred, first.ptr, last.ptr);
 	}
 
 	template<class BinaryPred>
@@ -757,20 +791,21 @@ public:
 	template<class BinaryPred>
 	size_type remove_adjacent_if(BinaryPred pred, const_iterator first, const_iterator last) {
 		// Erase all adjacent elements matching pred in range [first, last)
-		return this->_remove_adjacent_if(pred, first, last);
+		return this->_remove_adjacent_if(pred, first.ptr, last.ptr);
 	}
 
 	size_type unique() {
 		// Erase all adjacent duplicates
-		return this->remove_adjacent_if(std::equal_to<>{}, this->begin(), this->end());
+		return this->unique(this->begin(), this->end());
 	}
 
 	size_type unique(const_iterator first, const_iterator last) {
 		// Erase all adjacent duplicates in range [first, last)
-		return this->remove_adjacent_if(std::equal_to<>{}, first, last);
+		return this->_remove_adjacent_if(std::equal_to<>{}, first.ptr, last.ptr);
 	}
 
 	void reverse() noexcept {
+		// Reverse elements order
 		this->reverse(this->begin(), this->end());
 	}
 
@@ -827,19 +862,46 @@ public:
 
 	void sort() {
 		// Sort whole list using merge sort, elements are compared using std::less
-		this->_sort(_data.head->next, _data.size, std::less<>{});
+		this->sort(this->begin(), this->end(), std::less<>{});
 	}
 
 	template<class Comp>
 	void sort(Comp comp) {
 		// Sort whole list using merge sort, elements are compared using comp
-		this->_sort(_data.head->next, _data.size, comp);
+		this->sort(this->begin(), this->end(), comp);
+	}
+
+	void sort(const_iterator first, const_iterator last) {
+		// Sort range [first, last) using merge sort, elements are compared using std::less
+		this->_sort(first.ptr, last.ptr, std::less<>{});
+	}
+
+	template<class Comp>
+	void sort(const_iterator first, const_iterator last, Comp comp) {
+		// Sort range [first, last) using merge sort, elements are compared using comp
+		this->_sort(first.ptr, last.ptr, comp);
 	}
 
 private:
 	template<class... Args>
-	_NodePointer _emplace(_NodePointer node, Args&&... args) {
-		// Insert before node by perfect forwarding args
+	void _construct_n(const size_type count, const Args&... args) {
+		// Construct list with count elements constructed from args
+		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+		guard.append_n(count, args...);
+		guard.attach_head();
+	}
+
+	template<class It, class Se>
+	void _construct_range(It first, Se last) {
+		// Construct from range [first, last)
+		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+		guard.append_range(std::move(first), std::move(last));
+		guard.attach_head();
+	}
+
+	template<class... Args>
+	_NodePointer _emplace(_NodePointer where, Args&&... args) {
+		// Insert before where by perfect forwarding args
 		if (_data.size == this->max_size()) {
 			this->_length_error();
 		}
@@ -847,46 +909,93 @@ private:
 		memory::_NodeAllocateGuard<_NodeType> guard;
 		guard.allocate();
 		memory::construct_at(std::addressof(guard.node->value), std::forward<Args>(args)...);
-		memory::construct_at(std::addressof(guard.node->next), node);
-		memory::construct_at(std::addressof(guard.node->prev), node->prev);
+		memory::construct_at(std::addressof(guard.node->next), where);
+		memory::construct_at(std::addressof(guard.node->prev), where->prev);
 		
 		++_data.size;
 		const _NodePointer newNode = guard.release();
-		node->prev->next	= newNode;
-		node->prev			= newNode;
+		where->prev->next	= newNode;
+		where->prev			= newNode;
 		return newNode;
 	}
 
-	template<class Iter, class Sent>
-	void _assign(Iter first, const Sent last) {
-		// Assign range [first, last)
-		const _NodePointer lastNode = _data.head;
-		for (_NodePointer currNode = lastNode->next;;) {
-			if (currNode == lastNode) {
-				_ListInsertGuard<_MyVal> guard(_data);
-				guard.append_range(first, last);
-				guard.attach_at_end();
-				return;
-			}
-
-			if (first == last) {
-				this->_erase(currNode, lastNode);
-				return;
-			}
-
-			currNode->value = *first;
-			currNode = currNode->next;
-			++first;
+	template<class... Args>
+	_NodePointer _insert(_NodePointer where, const size_type count, const Args&... args) {
+		// Insert count elements constructed from args at where
+		if (count == 0) {
+			return where;
 		}
+
+		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+		guard.append_n(count, args...);
+		return guard.attach_before(where);
 	}
 
-	_NodePointer _erase(_NodePointer node) noexcept {
-		// Erase node
-		const _NodePointer result = node->next;
-		node->prev->next = node->next;
-		node->next->prev = node->prev;
+	template<class It, class Se>
+	_NodePointer _insert_range(_NodePointer where, It first, Se last) {
+		// Insert range [first, last) at where
+		if (first == last) {
+			return where;
+		}
 
-		_NodeType::free_node(node);
+		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+		guard.append_range(std::move(first), std::move(last));
+		return guard.attach_before(where);
+	}
+
+	template<class... Args>
+	void _assign(size_type count, const Args&... args) {
+		// Assign count elements constructed from args
+		const _NodePointer lastNode = _data.head;
+		// Reuse current nodes
+		_NodePointer currNode = lastNode->next;
+		for (; count > 0 && currNode != lastNode; --count) {
+			if constexpr (sizeof...(args) != 0) {
+				currNode->value = args;
+			}
+			else {
+				currNode->value = T{};
+			}
+			currNode = currNode->next;
+		}
+		// Trim
+		if (count == 0) {
+			this->_erase(currNode, lastNode);
+			return;
+		}
+		// Append
+		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+		guard.append_n(count, args...);
+		guard.attach_at_end();
+	}
+
+	template<class It, class Se>
+	void _assign_range(It first, const Se last) {
+		// Assign range [first, last)
+		const _NodePointer lastNode = _data.head;
+		// Reuse current nodes
+		_NodePointer currNode = lastNode->next;
+		for (; first != last && currNode != lastNode; ++first) {
+			currNode->value = *first;
+			currNode = currNode->next;
+		}
+		// Trim
+		if (first == last) {
+			this->_erase(currNode, lastNode);
+		}
+		// Append
+		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+		guard.append_range(std::move(first), std::move(last));
+		guard.attach_at_end();
+	}
+
+	_NodePointer _erase(_NodePointer where) noexcept {
+		// Erase where
+		const _NodePointer result = where->next;
+		where->prev->next = where->next;
+		where->next->prev = where->prev;
+
+		_NodeType::free_node(where);
 		--_data.size;
 		return result;
 	}
@@ -895,96 +1004,101 @@ private:
 		// Erase range [first, last)
 		if (first != last) {
 			const _NodePointer prevNode = first->prev;
-			prevNode->next = last;
-			last->prev = prevNode;
+			prevNode->next	= last;
+			last->prev		= prevNode;
 
 			do {
 				const _NodePointer nextNode = first->next;
 				_NodeType::free_node(first);
-				--_data.size;
-
 				first = nextNode;
+				--_data.size;
 			}
 			while (first != last);
 		}
 		return iterator(last);
 	}
 
-	_NodePointer _splice(_NodePointer node, List& other, _NodePointer first, _NodePointer last, const size_type count) {
-		// Splice range [first, last) of other at node
+	template<class... Args>
+	void _resize(const size_type newSize, const Args&... args) {
+		// Trim or append elements constructed from args to reach newSize
+		auto& mySize = _data.size;
+		// Trim
+		while (newSize < mySize) {
+			this->pop_back();
+		}
+		// Append
+		if (newSize > mySize) {
+			_ListInsertGuard<_MyVal> guard(std::addressof(_data));
+			guard.append_n(newSize - _data.size, args...);
+			guard.attach_at_end();
+		}
+	}
+
+	_NodePointer _splice(_NodePointer where, List& other, _NodePointer first, _NodePointer last, const size_type count) {
+		// Splice count nodes in range [first, last) of other at where
 		if (this != std::addressof(other)) {
-			if (this->max_size() - _data.size < count) {
+			if (count > this->max_size() - _data.size) {
 				this->_length_error();
 			}
 
 			_data.size += count;
 			other._data.size -= count;
 		}
-
-		return this->_splice(node, first, last);
+		return this->_splice(where, first, last);
 	}
 
-	_NodePointer _splice(_NodePointer node, _NodePointer first, _NodePointer last) {
-		// Splice range [first, last) at node
+	_NodePointer _splice(_NodePointer where, _NodePointer first, _NodePointer last) {
+		// Splice range [first, last) at where
 		// Fix up next values
 		const _NodePointer firstPrev = first->prev;
 		firstPrev->next = last;
 
 		const _NodePointer lastPrev = last->prev;
-		lastPrev->next = node;
+		lastPrev->next = where;
 
-		const _NodePointer prevNode = node->prev;
+		const _NodePointer prevNode = where->prev;
 		prevNode->next = first;
-
 		// Fix up prev values
-		node->prev	= lastPrev;
+		where->prev	= lastPrev;
 		last->prev	= firstPrev;
 		first->prev = prevNode;
-
 		return last;
 	}
 
 	template<class UnaryPred>
-	size_type _remove_if(UnaryPred pred, const_iterator first, const_iterator last) {
+	size_type _remove_if(UnaryPred pred, _NodePointer first, _NodePointer last) {
 		// Erase all elements matching pred in range [first, last)
-		if (first == last) {
-			return 0;
-		}
+		_ListRemoveGuard<_MyVal> guard(std::addressof(_data));
 
 		const auto oldSize = _data.size;
-		_ListRemoveGuard<_MyVal> guard(_data);
-
-		const _NodePointer lastNode = last.ptr;
-		for (_NodePointer currNode = first.ptr; currNode != lastNode;) {
-			if (pred(currNode->value)) {
-				currNode = guard.extract(currNode);
+		while (first != last) {
+			if (pred(first->value)) {
+				first = guard.extract(first);
 			}
 			else {
-				currNode = currNode->next;
+				first = first->next;
 			}
 		}
 		return oldSize - _data.size;
 	}
 
 	template<class BinaryPred>
-	size_type _remove_adjacent_if(BinaryPred pred, const_iterator first, const_iterator last) {
+	size_type _remove_adjacent_if(BinaryPred pred, _NodePointer first, _NodePointer last) {
 		// Erase all adjacent elements matching pred in range [first, last)
-		const _NodePointer lastNode = last.ptr;
-
-		_NodePointer currNode = first.ptr;
-		if (currNode == lastNode) {
+		if (first == last) {
 			return 0;
 		}
 
+		_ListRemoveGuard<_MyVal> guard(std::addressof(_data));
+
 		const auto oldSize = _data.size;
-		_ListRemoveGuard<_MyVal> guard(_data);
-		for (_NodePointer nextNode = currNode->next; nextNode != lastNode;) {
-			if (static_cast<bool>(pred(currNode->value, nextNode->value))) {
-				nextNode = guard.extract(nextNode);
+		for (_NodePointer currNode = first->next; currNode != last;) {
+			if (static_cast<bool>(pred(first->value, currNode->value))) {
+				currNode = guard.extract(currNode);
 			}
 			else {
-				currNode = nextNode;
-				nextNode = currNode->next;
+				first		= currNode;
+				currNode	= first->next;
 			}
 		}
 		return oldSize - _data.size;
@@ -1053,23 +1167,42 @@ private:
 	}
 
 	template<class Comp>
-	_NodePointer _sort(_NodePointer& first, const size_type length, Comp comp) {
-		// Sort range [first, first + length), return first + length
-		if (length == 0) {
+	_NodePointer _sort(_NodePointer& first, _NodePointer last, const size_type length, Comp comp) {
+		// Sort range [first, first + length) or until last is encountered
+		if (length == 0 || first == last) {
 			return first;
 		}
 
-		if (length == 1) {
+		if (length == 1 || first->next == last) {
 			return first->next;
 		}
 
 		const auto halfLength = length / 2;
 
-		_NodePointer midNode		= this->_sort(first, halfLength, comp);
-		const _NodePointer lastNode = this->_sort(midNode, length - halfLength, comp);
-		
+		_NodePointer midNode = this->_sort(first, last, halfLength, comp);
+		if (midNode == last) {
+			return midNode;
+		}
+
+		const _NodePointer lastNode = this->_sort(midNode, last, length - halfLength, comp);
+
 		first = this->_inplace_merge(first, midNode, lastNode, comp);
 		return lastNode;
+	}
+
+	template<class Comp>
+	void _sort(_NodePointer& first, const _NodePointer last, Comp comp) {
+		// Sort range [first, last)
+		size_type length = 2;
+
+		_NodePointer midNode = this->_sort(first, last, length, comp);
+		while (midNode != last) {
+			const _NodePointer lastNode = this->_sort(midNode, last, length, comp);
+			first						= this->_inplace_merge(first, midNode, lastNode, comp);
+			
+			midNode = lastNode;
+			length <<= 1;
+		}
 	}
 
 	[[noreturn]] static void _length_error() {
