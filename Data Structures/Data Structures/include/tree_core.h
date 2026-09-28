@@ -448,7 +448,7 @@ public:
 	}
 
 	void clear_subtree(node_pointer node) noexcept {
-		// Clear entire subtree at node recursively
+		// Free all nodes recursively, excluding head sentinel
 		while (!node->isNil) {
 			this->clear_subtree(node->right);
 			node_type::free_node(std::exchange(node, node->left));
@@ -456,6 +456,7 @@ public:
 	}
 
 	void clear() noexcept {
+		// Free all nodes
 		this->clear_subtree(head->parent);
 		node_type::free_empty_node(head);
 	}
@@ -467,7 +468,8 @@ public:
 	}
 
 	/*
-		Node head serves as the root sentinel and end() node for tree traversal
+		Sentinel node, serving as end() node.
+		All leaf nodes' children point back to head instead of nullptr, forming a closed structure.
 
 		head->left:		points to the leftmost node (min node)
 		head->right:	points to the rightmost node (max node)
@@ -479,6 +481,7 @@ public:
 
 template<class NodeT>
 struct _BSTreeTempNodeGuard {
+	// Guard for temporary node construction failure
 	using node_type		= NodeT;
 	using node_pointer	= typename node_type::node_pointer;
 
@@ -504,6 +507,7 @@ struct _BSTreeTempNodeGuard {
 
 template<class BSTreeVal>
 struct _TreeConstructGuard {
+	// Guard for tree construction failure
 	using node_type = typename BSTreeVal::node_type;
 
 	_TreeConstructGuard(BSTreeVal* ptr)
@@ -529,6 +533,7 @@ struct _TreeConstructGuard {
 
 template<class BSTreeVal>
 struct _SubtreeCopyGuard {
+	// Guard for tree copy failure
 	using node_pointer = typename BSTreeVal::node_pointer;
 
 	_SubtreeCopyGuard(BSTreeVal* ptr, node_pointer newRoot)
@@ -604,36 +609,28 @@ public:
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	_BSTree(It first, Se last)
 		: _data(), _comp() {
-		_TreeConstructGuard<_MyVal> guard(_data);
-		this->insert(std::move(first), std::move(last));
-		guard.release();
+		this->_construct_range(std::move(first), std::move(last));
 	}
 
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	_BSTree(It first, Se last, const key_compare& comp)
 		: _data(), _comp(comp) {
-		_TreeConstructGuard<_MyVal> guard(_data);
-		this->insert(std::move(first), std::move(last));
-		guard.release();
+		this->_construct_range(std::move(first), std::move(last));
 	}
 
 	_BSTree(std::initializer_list<value_type> initList)
 		: _data(), _comp() {
-		_TreeConstructGuard<_MyVal> guard(_data);
-		this->insert(initList);
-		guard.release();
+		this->_construct_range(initList.begin(), initList.end());
 	}
 
 	_BSTree(std::initializer_list<value_type> initList, const key_compare& comp)
 		: _data(), _comp(comp) {
-		_TreeConstructGuard<_MyVal> guard(_data);
-		this->insert(initList);
-		guard.release();
+		this->_construct_range(initList.begin(), initList.end());
 	}
 
 	_BSTree(const _BSTree& other)
 		: _data(), _comp(other._comp) {
-		_TreeConstructGuard<_MyVal> guard(_data);
+		_TreeConstructGuard<_MyVal> guard(std::addressof(_data));
 		this->_copy<_CopyStrategy::Copy>(other);
 		guard.release();
 	}
@@ -721,7 +718,7 @@ public:
 	}
 
 	[[nodiscard]] reference min() noexcept {
-		return _data.head->left->value; // UB
+		return _data.head->left->value;
 	}
 
 	[[nodiscard]] const_reference min() const noexcept {
@@ -729,7 +726,7 @@ public:
 	}
 
 	[[nodiscard]] reference max() noexcept {
-		return _data.head->right->value; // UB
+		return _data.head->right->value;
 	}
 
 	[[nodiscard]] const_reference max() const noexcept {
@@ -761,14 +758,14 @@ public:
 
 	template<class... Args>
 	std::pair<iterator, bool> emplace(Args&&... args) {
-		// Insert by constructing in place using args
+		// Insert by perfectly forwarding args
 		const auto result = this->_emplace(std::forward<Args>(args)...);
 		return { iterator(result.first), result.second };
 	}
 
 	template<class... Args>
 	iterator emplace_hint(const_iterator hint, Args&&... args) {
-		// Insert with hint by constructing in place using args
+		// Insert with hint by perfectly forwarding args
 		return iterator(this->_emplace_hint(hint.ptr, std::forward<Args>(args)...));
 	}
 
@@ -825,15 +822,74 @@ public:
 		this->insert(initList.begin(), initList.end());
 	}
 
+	auto insert(node_handle&& handle) {
+		// Insert node from handle
+		if (handle.is_empty()) {
+			if constexpr (_isMulti) {
+				return this->end();
+			}
+			else {
+				return insert_return_type{ this->end(), false, node_handle{} };
+			}
+		}
+
+		const auto node = handle.get_pointer();
+		const auto& key = Traits::key_from_node(node->value);
+
+		_NodeFindResult<_NodePointer> result;
+		if constexpr (_isMulti) {
+			result = this->_find_upper_bound(key);
+		}
+		else {
+			result = this->_find_lower_bound(key);
+			if (this->_is_lower_bound_duplicate(result.bound, key)) {
+				return insert_return_type{ iterator(result.bound), false, std::move(handle) };
+			}
+		}
+
+		this->_check_max_size();
+
+		node->left	= _data.head;
+		node->right = _data.head;
+
+		const auto inserted = _data.insert(result.location, handle._release());
+		if constexpr (_isMulti) {
+			return iterator(inserted);
+		}
+		else {
+			return insert_return_type{ iterator(inserted), true, std::move(handle) };
+		}
+	}
+
+	iterator insert(const_iterator hint, node_handle&& handle) {
+		// Insert node from handle with hint
+		if (handle.is_empty()) {
+			return this->end();
+		}
+
+		const auto node = handle.get_pointer();
+		const auto& key = Traits::key_from_node(node->value);
+		const auto result = this->_find_hint(hint.ptr, key);
+		if (result.isDuplicate) {
+			return iterator(result.location.parent);
+		}
+
+		this->_check_max_size();
+
+		node->left	= _data.head;
+		node->right = _data.head;
+		return iterator(_data.insert(result.location, handle._release()));
+	}
+
 	iterator erase(iterator where) noexcept
 		requires (_isMap)
 	{
-		// Erase at where
+		// Erase element at where
 		return iterator(this->_erase(where));
 	}
 
 	iterator erase(const_iterator where) noexcept {
-		// Erase at where
+		// Erase element at where
 		return iterator(this->_erase(where));
 	}
 
@@ -843,9 +899,9 @@ public:
 	}
 
 	size_type erase(const key_type& key)
-		noexcept(noexcept(_equal_range(key)))
+		noexcept(noexcept(this->_equal_range(key)))
 	{
-		// Erase all occurences of key
+		// Erase all elements matching key
 		return this->_erase(this->_equal_range(key));
 	}
 
@@ -855,12 +911,12 @@ public:
 	*/
 	template<class KeyT, class Comp = key_compare>
 		requires requires {
-		typename Comp::is_transparent;
-		requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
-		requires !concepts::implicitly_convertible_to<KeyT, iterator>;
-	}
+			typename Comp::is_transparent;
+			requires !concepts::implicitly_convertible_to<KeyT, const_iterator>;
+			requires !concepts::implicitly_convertible_to<KeyT, iterator>;
+		}
 	size_type erase(KeyT&& key)
-		noexcept(noexcept(_equal_range(key)))
+		noexcept(noexcept(this->_equal_range(key)))
 	{
 		// Erase all elements equivalent to key
 		return this->_erase(this->_equal_range(key));
@@ -885,12 +941,12 @@ public:
 	}
 
 	[[nodiscard]] iterator find(const key_type& key) {
-		// Find key
+		// Find the first element matching key
 		return iterator(this->_find(key));
 	}
 
 	[[nodiscard]] const_iterator find(const key_type& key) const {
-		// Find key
+		// Find the first element matching key
 		return const_iterator(this->_find(key));
 	}
 
@@ -909,7 +965,7 @@ public:
 	}
 
 	[[nodiscard]] bool contains(const key_type& key) const {
-		// Check if tree contains key
+		// Check if tree contains element matching key
 		return this->_is_lower_bound_duplicate(this->_find_lower_bound(key).bound, key);
 	}
 
@@ -921,12 +977,10 @@ public:
 	}
 
 	[[nodiscard]] size_type count(const key_type& key) const {
-		// Count occurrences of key
+		// Count all elements matching key
 		if constexpr (_isMulti) {
 			const auto result = this->_equal_range(key);
-			return static_cast<size_type>(std::distance(
-				const_iterator(result.first), const_iterator(result.second)
-			));
+			return static_cast<size_type>(std::distance(const_iterator(result.first), const_iterator(result.second)));
 		}
 		else {
 			return this->_is_lower_bound_duplicate(this->_find_lower_bound(key).bound, key);
@@ -936,11 +990,9 @@ public:
 	template<class KeyT>
 		requires requires { typename key_compare::is_transparent; }
 	[[nodiscard]] size_type count(const KeyT& key) const {
-		// Count occurrences of elements equivalent to key
+		// Count all elements equivalent to key
 		const auto result = this->_equal_range(key);
-		return static_cast<size_type>(std::distance(
-			const_iterator(result.first), const_iterator(result.second)
-		));
+		return static_cast<size_type>(std::distance(const_iterator(result.first), const_iterator(result.second)));
 	}
 
 	[[nodiscard]] iterator lower_bound(const key_type& key) {
@@ -956,14 +1008,14 @@ public:
 	template<class KeyT>
 		requires requires { typename key_compare::is_transparent; }
 	[[nodiscard]] iterator lower_bound(const KeyT& key) {
-		// Find the first equivalent element not less than key
+		// Find the first element not less than key by equivalent comparison
 		return iterator(this->_find_lower_bound(key).bound);
 	}
 
 	template<class KeyT>
 		requires requires { typename key_compare::is_transparent; }
 	[[nodiscard]] const_iterator lower_bound(const KeyT& key) const {
-		// Find the first equivalent element not less than key
+		// Find the first element not less than key equivalent comparison
 		return const_iterator(this->_find_lower_bound(key).bound);
 	}
 
@@ -980,25 +1032,25 @@ public:
 	template<class KeyT>
 		requires requires { typename key_compare::is_transparent; }
 	[[nodiscard]] iterator upper_bound(const KeyT& key) {
-		// Find the first equivalent element greater than key
+		// Find the first element greater than key equivalent comparison
 		return iterator(this->_find_upper_bound(key).bound);
 	}
 
 	template<class KeyT>
 		requires requires { typename key_compare::is_transparent; }
 	[[nodiscard]] const_iterator upper_bound(const KeyT& key) const {
-		// Find the first equivalent element greater than key
+		// Find the first element greater than key equivalent comparison
 		return const_iterator(this->_find_upper_bound(key).bound);
 	}
 
 	[[nodiscard]] std::pair<iterator, iterator> equal_range(const key_type& key) {
-		// Find the range of elements equivalent to key
+		// Find the range of elements matching key
 		const auto result = this->_equal_range(key);
 		return { iterator(result.first), iterator(result.second) };
 	}
 
 	[[nodiscard]] std::pair<const_iterator, const_iterator> equal_range(const key_type& key) const {
-		// Find the range of elements equivalent to key
+		// Find the range of elements matching key
 		const auto result = this->_equal_range(key);
 		return { const_iterator(result.first), const_iterator(result.second) };
 	}
@@ -1019,21 +1071,36 @@ public:
 		return { const_iterator(result.first), const_iterator(result.second) };
 	}
 
+	node_handle extract(const_iterator where) {
+		// Extract node at where, return its node_handle
+		return node_handle::make(_data.extract(where));
+	}
+
+	node_handle extract(const key_type& key) {
+		// Extract node with key, return its node_handle
+		const auto where = this->find(key);
+		if (where == this->end()) {
+			return node_handle{};
+		}
+		return this->extract(where);
+	}
+
 	template<class, template<class...> class>
 	friend class _BSTree;
 
 	template<class OtherTraits, template<class...> class OtherVal>
 	void merge(_BSTree<OtherTraits, OtherVal>& other) {
-		// Merge other into *this, leaving other empty
+		// Merge with other
 		if constexpr (std::is_same_v<_BSTree, _BSTree<OtherTraits, OtherVal>>) {
 			if (this == std::addressof(other)) {
 				return;
 			}
 		}
 
-		for (auto iter = other.begin(); iter != other.end();) {
-			const _NodePointer currNode = iter.ptr;
-			++iter; // Important: increment iterator before extraction
+		auto first = other.begin();
+		while (!first.ptr->isNil) {
+			const _NodePointer currNode = first.ptr;
+			++first; // Important: increment iterator before extraction
 
 			const auto& key = Traits::key_from_node(currNode->value);
 
@@ -1060,81 +1127,8 @@ public:
 
 	template<class OtherTraits, template<class...> class OtherVal>
 	void merge(_BSTree<OtherTraits, OtherVal>&& other) {
-		// Merge other into *this, leaving other empty
+		// Merge with other
 		this->merge(other);
-	}
-
-	node_handle extract(const_iterator where) {
-		// Extract node at where, return its node_handle
-		return node_handle::make(_data.extract(where));
-	}
-
-	node_handle extract(const key_type& key) {
-		// Extract node with key, return its node_handle
-		const auto where = this->find(key);
-		if (where == this->end()) {
-			return node_handle{};
-		}
-		return this->extract(where);
-	}
-
-	auto insert(node_handle&& handle) {
-		// Insert node from handle
-		if (handle.is_empty()) {
-			if constexpr (_isMulti) {
-				return this->end();
-			}
-			else {
-				return insert_return_type{ this->end(), false, node_handle{} };
-			}
-		}
-
-		const auto node = handle.get_pointer();
-		const auto& key = Traits::key_from_node(node->value);
-
-		_NodeFindResult<_NodePointer> result;
-		if constexpr (_isMulti) {
-			result = this->_find_upper_bound(key);
-		}
-		else {
-			result = this->_find_lower_bound(key);
-			if (this->_is_lower_bound_duplicate(result.bound, node->value)) {
-				return insert_return_type{ iterator(result.bound), false, std::move(handle) };
-			}
-		}
-
-		this->_check_max_size();
-
-		node->left	= _data.head;
-		node->right = _data.head;
-
-		const auto inserted = _data.insert(result.location, handle._release());
-		if constexpr (_isMulti) {
-			return iterator(inserted);
-		}
-		else {
-			return insert_return_type{ iterator(inserted), true, std::move(handle) };
-		}
-	}
-
-	iterator insert(const_iterator hint, node_handle&& handle) {
-		// Insert node from handle with hint
-		if (handle.is_empty()) {
-			return this->end();
-		}
-
-		const auto node		= handle.get_pointer();
-		const auto& key		= Traits::key_from_node(node->value);
-		const auto result	= this->_find_hint(hint.ptr, node->value);
-		if (result.isDuplicate) {
-			return iterator(result.location.parent);
-		}
-		
-		this->_check_max_size();
-
-		node->left	= _data.head;
-		node->right = _data.head;
-		return iterator(_data.insert(result.location, handle._release()));
 	}
 
 	void _node_print(_NodePointer node) {
@@ -1146,10 +1140,8 @@ public:
 		}
 	}
 
-	void level_order() {
+	void level_order(const char* sep, bool printRoot = false) {
 		// Print subtree at node in level-order
-		std::cout << typeid(value_type).name() << "\n";
-
 		_NodePointer root = _data.head->parent;
 		if (root->isNil) {
 			return;
@@ -1162,13 +1154,15 @@ public:
 		while (!nodesQueue.empty()) {
 			const _NodePointer node = nodesQueue.front();
 
-			std::cout << "[";
-			if (node->parent->isNil) {
-				std::cout << "-]";
-			}
-			else {
-				const auto key = Traits::key_from_node(node->parent->value);
-				std::cout << std::fixed << std::setprecision(1) << key << "]";
+			if (printRoot) {
+				std::cout << "[";
+				if (node->parent->isNil) {
+					std::cout << "-]";
+				}
+				else {
+					const auto key = Traits::key_from_node(node->parent->value);
+					std::cout << std::fixed << std::setprecision(1) << key << "]";
+				}
 			}
 
 			std::cout << "-";
@@ -1177,7 +1171,7 @@ public:
 
 			const bool isBound = node == bound;
 			if (isBound) {
-				std::cout << "| ";
+				std::cout << sep;
 			}
 
 			nodesQueue.pop();
@@ -1198,6 +1192,14 @@ public:
 	}
 
 private:
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	void _construct_range(It first, Se last) {
+		// Construct from range [first, last)
+		_TreeConstructGuard<_MyVal> guard(std::addressof(_data));
+		this->insert(std::move(first), std::move(last));
+		guard.release();
+	}
+
 	template<_CopyStrategy _strat>
 	_NodePointer _copy_node(_NodePointer node) {
 		// Construct new node by copying or moving node->value
@@ -1207,9 +1209,12 @@ private:
 		}
 		else {
 			if constexpr (_isMap) {
-				return _data.copy_node(node, std::pair<const key_type&, typename value_type::second_type&&>(
-					const_cast<key_type&>(val.first), std::move(val.second)
-				));
+				return _data.copy_node(
+					node,
+					std::pair<const key_type&, typename value_type::second_type&&>(
+						const_cast<key_type&>(val.first), std::move(val.second)
+					)
+				);
 			}
 			else {
 				return _data.copy_node(node, std::move(val));
@@ -1225,7 +1230,7 @@ private:
 			newRoot = this->_copy_node<_strat>(oldRoot);
 			newRoot->parent = where;
 
-			_SubtreeCopyGuard<_MyVal> guard(_data, newRoot);
+			_SubtreeCopyGuard<_MyVal> guard(std::addressof(_data), newRoot);
 			newRoot->left	= this->_copy_subtree<_strat>(oldRoot->left, newRoot);
 			newRoot->right	= this->_copy_subtree<_strat>(oldRoot->right, newRoot);
 			guard.release();
@@ -1251,7 +1256,7 @@ private:
 
 	template<class KeyT>
 	[[nodiscard]] bool _is_lower_bound_duplicate(_NodePointer bound, const KeyT& key) const {
-		// Check if key is duplicate by comparing with bound
+		// Check if key is duplicate
 		return !bound->isNil && !static_cast<bool>(_comp(key, Traits::key_from_node(bound->value)));
 	}
 
@@ -1437,7 +1442,7 @@ private:
 
 	template<class... Args>
 	std::pair<_NodePointer, bool> _emplace(Args&&... args) {
-		// Insert by constructing node inplace using args
+		// Insert by perfectly forwarding args
 		using key_extractor = typename Traits::template in_place_key_extractor<Args...>;
 
 		_NodePointer newNode;
@@ -1452,10 +1457,11 @@ private:
 			}
 
 			this->_check_max_size();
+
 			newNode = _BSTreeTempNodeGuard<_NodeType>(_data.head, std::forward<Args>(args)...).release();
 		}
 		else {
-			_BSTreeTempNodeGuard<_NodeType> guard(_data.head, std::forward<Args>(args)...); // Create temporary node for initial search
+			_BSTreeTempNodeGuard<_NodeType> guard(std::addressof(_data).head, std::forward<Args>(args)...); // Create temporary node for initial search
 
 			const auto& key = Traits::key_from_node(guard.node->value);
 			if constexpr (_isMulti) {
@@ -1469,6 +1475,7 @@ private:
 			}
 
 			this->_check_max_size();
+
 			newNode = guard.release(); // Safe to insert, release temp node, transfer ownership to *this
 
 		}
@@ -1477,7 +1484,7 @@ private:
 
 	template<class... Args>
 	_NodePointer _emplace_hint(_NodePointer hintNode, Args&&... args) {
-		// Insert by constructing node inplace using args with given hint
+		// Insert by perfectly forwarding args with hint
 		using key_extractor = typename Traits::template in_place_key_extractor<Args...>;
 
 		_NodePointer newNode;
@@ -1489,10 +1496,11 @@ private:
 			}
 
 			this->_check_max_size();
+
 			newNode = _BSTreeTempNodeGuard<_NodeType>(_data.head, std::forward<Args>(args)...).release();
 		}
 		else {
-			_BSTreeTempNodeGuard<_NodeType> guard(_data.head, std::forward<Args>(args)...); // Create temporary node for initial search
+			_BSTreeTempNodeGuard<_NodeType> guard(std::addressof(_data).head, std::forward<Args>(args)...); // Create temporary node for initial search
 
 			result = this->_find_hint(hintNode, Traits::key_from_node(guard.node->value));
 			if constexpr (!_isMulti) {
@@ -1502,14 +1510,15 @@ private:
 			}
 
 			this->_check_max_size();
-			newNode = guard.release(); // Safe to insert, release temp node, transfer ownership to *this
+
+			newNode = guard.release();
 
 		}
 		return _data.insert(result.location, newNode);
 	}
 
 	_NodePointer _erase(const_iterator where) noexcept {
-		// Erase node at where, return the next in-order node
+		// Erase element at where, return the next in-order node
 		const auto next = (++const_iterator(where));
 		_NodeType::free_node(_data.extract(where));
 		return next.ptr;
@@ -1530,9 +1539,9 @@ private:
 
 	size_type _erase(const std::pair<_NodePointer, _NodePointer> where) noexcept {
 		// Erase range [where.first, where.second)
-		const const_iterator first(where.first);
-		const const_iterator last(where.second);
-		const auto count = static_cast<size_type>(std::distance(first, last));
+		const auto first	= const_iterator(where.first);
+		const auto last		= const_iterator(where.second);
+		const auto count	= static_cast<size_type>(std::distance(first, last));
 		this->_erase(first, last);
 		return count;
 	}

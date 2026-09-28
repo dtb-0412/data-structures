@@ -551,14 +551,14 @@ public:
 				E.g. arr.emplace(arr.begin() + 2, arr[4]);
 												  -------
 				*/
-				memory::_TempObjectGuard<T> guard(std::forward<Args>(args)...);
+				memory::_TempObjectGuard<T> object(std::forward<Args>(args)...);
 				// Shift the last element to the right by 1 offset, potentially uninitialized memory
 				memory::construct_at(oldLast, std::move(oldLast[-1]));
 				++_data.last;
 				// Shift range [wherePtr, oldLast - 1) to the right by 1 offset (shift backward to avoid overlap)
 				memory::move_backward(wherePtr, oldLast - 1, oldLast);
 				// Insert new element at where
-				*wherePtr = std::move(guard.get_object());
+				*wherePtr = std::move(object.get_value());
 			}
 			return iterator(wherePtr);
 		}
@@ -915,11 +915,11 @@ private:
 			const auto constructedLast	= newFirst + offset + count;
 
 			_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, constructedLast, constructedLast);
-			if constexpr (sizeof...(args) != 0) {
-				memory::uninitialized_fill_n(newFirst + offset, count, args...);
+			if constexpr (sizeof...(args) == 0) {
+				memory::uninitialized_value_construct_n(newFirst + offset, count);
 			}
 			else {
-				memory::uninitialized_value_construct_n(newFirst + offset, count);
+				memory::uninitialized_fill_n(newFirst + offset, count, args...);
 			}
 			guard.constructedFirst = newFirst + offset;
 
@@ -945,17 +945,17 @@ private:
 		}
 		else {
 			// Handle aliasing with temporary object guard
-			const memory::_TempObjectGuard<T> guard(args...);
-			const auto& object = guard.get_object();
+			const memory::_TempObjectGuard<T> object(args...);
+			const auto& value = object.get_value();
 
 			const auto affected = static_cast<size_type>(oldLast - where);
 			if (count > affected) {
 				// Fill (count - affected) * val into [oldLast, oldLast + count - affected), potentially uninitialized memory
-				myLast = memory::uninitialized_fill_n(oldLast, count - affected, object);
+				myLast = memory::uninitialized_fill_n(oldLast, count - affected, value);
 				// Shift range [where, oldLast) to the right by count offset, potentially uninitialized memory
 				myLast = memory::uninitialized_move(where, oldLast, where + count, oldLast + count).out;
 				// Fill affected * val into [where, oldLast)
-				memory::fill(where, oldLast, object);
+				memory::fill(where, oldLast, value);
 			}
 			else {
 				// Shift range [oldLast - count, oldLast) to the right by count offset, potentially uninitialized memory
@@ -963,7 +963,7 @@ private:
 				// Shift range [where, oldLast - count) backward to the right by count offset (shift backward to avoid overlap)
 				memory::move_backward(where, oldLast - count, oldLast);
 				// Fill count * val into [where, where + count)
-				memory::fill_n(where, count, object);
+				memory::fill_n(where, count, value);
 			}
 		}
 		return _data.first + offset;

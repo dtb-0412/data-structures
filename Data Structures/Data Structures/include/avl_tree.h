@@ -107,8 +107,7 @@ public:
 			head->right = (--_BSTreeConstIterator(where)).ptr;
 		}
 
-		node_pointer fixNode	= head;
-		node_pointer parent		= extracted->parent;
+		node_pointer fixNode = head;
 		if (!(extracted->left->isNil || extracted->right->isNil)) { // Node has both children
 			const node_pointer successor = this->min(extracted->right);
 			fixNode = (successor->parent != extracted) ? successor->parent : successor;

@@ -1,5 +1,15 @@
 #pragma once
 
+//#define AVL_TREE_TEST
+#define DEQUE_TEST
+#define DYNAMIC_ARRAY_TEST
+//#define FORWARD_LIST_TEST
+#define LIST_TEST
+//#define MAP_TEST
+//#define RB_TREE_TEST
+//#define SET_TEST
+//#define STACK_TEST
+
 #include<deque>
 #include<forward_list>
 #include<list>
@@ -10,15 +20,6 @@
 #include<unordered_map>
 #include<vector>
 
-#include"./include/avl_tree.h"
-#include"./include/deque.h"
-#include"./include/dynamic_array.h"
-#include"./include/forward_list.h"
-#include"./include/list.h"
-#include"./include/map.h"
-#include"./include/rb_tree.h"
-#include"./include/set.h"
-#include"./include/stack.h"
 #include"common.h"
 #include"printer.hpp"
 #include"random.hpp"
@@ -26,6 +27,8 @@
 #define TYPE int
 #define COMP std::less<> //TypeCompare
 
+#ifdef AVL_TREE_TEST
+#include"./include/avl_tree.h"
 void avl_tree_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
@@ -40,11 +43,10 @@ void avl_tree_test() {
 
 		AVLTree<TYPE, COMP> tree2;
 		tree2.insert(data2.begin(), data2.end());
-		tree2.level_order();
 		std::cout << "\n\n";
 
 		tree1.erase(8);
-		//tree1.merge(tree2);
+		tree1.merge(tree2);
 
 		printer::Printer printer;
 		printer.sep(", ").alt("Empty\n");
@@ -55,7 +57,9 @@ void avl_tree_test() {
 		printer
 			.prompt("Tree2: ")
 			.print_range(tree2.begin(), tree2.end());
-		tree1.level_order();
+
+		tree1.level_order("\n", true);
+		tree2.level_order("\n");
 	}
 
 	std::cout << "\nPress any key to exit...";
@@ -71,36 +75,45 @@ void avl_tree_test() {
 				12  24
 	*/
 }
+#endif // AVL_TREE_TEST
 
+#ifdef DEQUE_TEST
+#include"./include/deque.h"
 void deque_test() {
-#pragma pack(push, 1)
-	struct _13BytesStruct {
-		int*	_8Bytes;
-		int		_4Bytes;
-		bool	_1byte;
-	};
-#pragma pack(pop)
-	Deque<_13BytesStruct> deque;
+//#pragma pack(push, 1)
+//	struct _13BytesStruct {
+//		int*	_8Bytes;
+//		int		_4Bytes;
+//		bool	_1byte;
+//	};
+//#pragma pack(pop)
+//	Deque<_13BytesStruct> deque;
 
-	//const Deque<int> deque({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
+	Deque<int> deque({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
 	//deque.assign({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
 	//deque.resize(5);
 	//deque.clear();
 
+	deque.emplace(deque.begin() + 3, 99);
+	deque.prepend(5, 100);
+
 	printer::Printer printer;
 	printer.sep(", ").alt("Empty\n");
 	
-	//std::cout << "Size: " << deque.size() << "\n";
-	//deque.print_map();
-	//
-	//printer
-	//	.prompt("\nMy deque: ")
-	//	.print_range(deque.begin(), deque.end());
+	std::cout << "Size: " << deque.size() << "\n";
+	deque.print_map();
+	
+	printer
+		.prompt("\nMy deque: ")
+		.print_range(deque.begin(), deque.end());
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // DEQUE_TEST
 
+#ifdef DYNAMIC_ARRAY_TEST
+#include"./include/dynamic_array.h"
 void dynamic_array_test() {
 	DynamicArray<int> arr;
 	arr.reserve(20);
@@ -122,7 +135,10 @@ void dynamic_array_test() {
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // DYNAMIC_ARRAY_TEST
 
+#ifdef FORWARD_LIST_TEST
+#include"./include/forward_list.h"
 void forward_list_test() {
 	ForwardList<int> flist1({ 1, 5, 8, 4, 10 });
 	ForwardList<int> flist2({ 3, 7, 2, 9, 6 });
@@ -158,7 +174,10 @@ void forward_list_test() {
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // FORWARD_LIST_TEST
 
+#ifdef LIST_TEST
+#include"./include/list.h"
 void list_test() {
 	List<int> list1({ 1, 5, 8, 4, 10 });
 	List<int> list2({ 3, 7, 2, 9, 6 });
@@ -194,7 +213,10 @@ void list_test() {
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // LIST_TEST
 
+#ifdef MAP_TEST
+#include"./include/map.h"
 struct MapDefaultPrint {
 	template<concepts::printable T, concepts::printable U>
 	void operator()(std::ostream& os, const std::pair<const T, U>& val) const {
@@ -244,7 +266,10 @@ void map_test() {
 		map1.level_order();
 	}
 }
+#endif // MAP_TEST
 
+#ifdef RB_TREE_TEST
+#include"./include/rb_tree.h"
 void rb_tree_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
@@ -280,7 +305,10 @@ void rb_tree_test() {
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // RB_TREE_TEST
 
+#ifdef SET_TEST
+#include"./include/set.h"
 void set_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
@@ -313,7 +341,10 @@ void set_test() {
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // SET_TEST
 
+#ifdef STACK_TEST
+#include"./include/stack.h"
 void stack_test() {
 	//Stack<int> arr;
 
@@ -330,3 +361,4 @@ void stack_test() {
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
+#endif // STACK_TEST

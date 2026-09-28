@@ -207,8 +207,8 @@ private:
 
 	static constexpr std::size_t _bytes	= sizeof(value_type);
 	
-	// Each block can hold up to 1024 elements
-	static constexpr std::size_t _maxBlockSize = 1024;
+	// Each block can hold up to 256 bytes
+	static constexpr std::size_t _maxBlockBytes = 256;
 	
 	/*
 	Raw number of elements per block.
@@ -221,13 +221,15 @@ private:
 	Example:
 		_bytes			= sizeof(_13BytesStruct) 
 						= 13;
-		_rawBlockSize	= 1024 / 13
-						= 78;
-		_blockSize		= std::bit_floor(78)
-						= 2^6
-						= 64 (<= 78);
+		_rawBlockSize	= 256 / 13
+						= 19;
+		_blockSize		= std::bit_floor(19)
+						= 2^4
+						= 16 (<= 19);
+
+		=> each block is 16 * 13 = 206 bytes
 	*/
-	static constexpr std::size_t _rawBlockSize = (_bytes < _maxBlockSize) ? _maxBlockSize / _bytes : 1;
+	static constexpr std::size_t _rawBlockSize = (_bytes < _maxBlockBytes) ? _maxBlockBytes / _bytes : 1;
 
 public:
 	// Number of elements per block, power of 2, scale with element size
@@ -288,24 +290,12 @@ public:
 	size_type mapSize;	// Size of map array (number of blocks)
 	size_type index;	// Index of initial element in deque
 	size_type size;		// Number of elements in deque
-
-	/*
-	Naming convention:
-		Array of block pointers:			map
-		Number of block pointers in map:	mapSize/myMapSize/newMapSize
-		Number of elements in deque:		size/mySize/newSize
-		Number of elements in block:		blockSize, _blockSize
-		Index of first block/elem in map:	index/myIndex/newIndex
-		Index of block in map:				elemOffset
-		Index of element in block:			elemOffset
-		Index of element in deque:			index/newIndex
-	*/
 };
 
-template<class Deque>
+template<class Container>
 struct _DequeConstructGuard {
 	// Guard for deque construction failure
-	_DequeConstructGuard(Deque* target)
+	_DequeConstructGuard(Container* target)
 		: target(target) {}
 
 	_DequeConstructGuard(const _DequeConstructGuard&)				= delete;
@@ -321,11 +311,54 @@ struct _DequeConstructGuard {
 		target = nullptr;
 	}
 
-	Deque* target;
+	Container* target;
+};
+
+enum class _GrowthDirection : bool {
+	FRONT,
+	BACK
+};
+
+template<class Container, _GrowthDirection _direction>
+struct _DequeInsertGuard {
+	// Guard for deque insertion failure
+	using size_type = typename Container::size_type;
+
+	_DequeInsertGuard(Container* target, const size_type oldSize)
+		: target(target), _oldSize(oldSize) {}
+
+	_DequeInsertGuard(const _DequeInsertGuard&)				= delete;
+	_DequeInsertGuard& operator=(const _DequeInsertGuard&)	= delete;
+
+	~_DequeInsertGuard() noexcept {
+		if (target) {
+			while (_oldSize < target->_data.size) {
+				if constexpr (_direction == _GrowthDirection::FRONT) {
+					target->pop_front();
+				}
+				else {
+					target->pop_back();
+				}
+			}
+		}
+	}
+
+	void release() noexcept {
+		target = nullptr;
+	}
+	
+	Container* target;
+
+private:
+	const size_type _oldSize; // Number of elements to restore
 };
 
 template<class T>
 class Deque {
+private:
+	template<class Container, _GrowthDirection _direction>
+	friend struct _DequeInsertGuard;
+
 public:
 	using value_type		= T;
 	using size_type			= std::size_t;
@@ -393,7 +426,7 @@ public:
 
 	Deque& operator=(const Deque& other) {
 		if (this != std::addressof(other)) {
-			this->_assign(other.begin(), other.end());
+			this->_assign_range(other.begin(), other.end());
 		}
 		return *this;
 	}
@@ -407,7 +440,7 @@ public:
 	}
 
 	Deque& operator=(std::initializer_list<T> initList) {
-		this->_assign(initList.begin(), initList.end());
+		this->_assign_range(initList.begin(), initList.end());
 		return *this;
 	}
 
@@ -512,6 +545,192 @@ public:
 		);
 	}
 
+	[[nodiscard]] size_type map_size() const noexcept {
+		return _data.mapSize;
+	}
+
+	[[nodiscard]] size_type block_size() const noexcept {
+		return _blockSize;
+	}
+
+	template<class... Args>
+	iterator emplace(const_iterator where, Args&&... args) {
+		// Insert by perfectly forwarding args at where
+		const auto offset = static_cast<size_type>(where - this->begin());
+		if (offset == 0) { // Insert at beginning
+			this->_emplace_front(std::forward<Args>(args)...);
+		}
+		else if (offset == _data.size) { // Insert at end
+			this->_emplace_back(std::forward<Args>(args)...);
+		}
+		else {
+			// Optimize to shift as few elements as possible regardless of growth direction
+			memory::_TempObjectGuard<T> object(std::forward<Args>(args)...);
+			if (offset <= _data.size / 2) { // Insert closer to front, shift elements to the left
+				// Construct by moving the first element before begin()
+				this->_emplace_front(std::move(*this->begin()));
+				
+				/*
+				After _emplace_front(), begin() points to the new first element.
+				Let oldBegin = begin() before _emplace_front().
+				Let newBegin = begin() after _emplace_front() = oldBegin - 1.
+				
+				Shift range [oldBegin + 1, oldBegin + offset) or range [newBegin + 2, newBegin + 1 + offset)
+				to the left by 1 offset.
+				*/
+				auto newBegin	= this->begin();
+				auto destEnd	= newBegin + offset;
+
+				memory::move(newBegin + 2, newBegin + 1 + offset, newBegin + 1);
+				*destEnd = std::move(object.get_value());
+			}
+			else { // Insert closer to back, shift elements to the right
+				// Construct by moving the last element at end()
+				this->_emplace_back(std::move(*(this->end() - 1)));
+
+				auto newEnd		= this->end();
+				auto srcBegin	= this->begin() + offset;
+				
+				memory::move_backward(srcBegin, newEnd - 2, newEnd - 1);
+				*srcBegin = std::move(object.get_value());
+			}
+		}
+		return this->begin() + offset;
+	}
+
+	template<class... Args>
+	reference emplace_front(Args&&... args) {
+		// Insert by perfectly forwarding args at beginning
+		this->_emplace_front(std::forward<Args>(args)...);
+		return this->front();
+	}
+
+	template<class... Args>
+	reference emplace_back(Args&&... args) {
+		// Insert by perfectly forwarding args at end
+		this->_emplace_back(std::forward<Args>(args)...);
+		return this->back();
+	}
+
+	void push_front(const T& val) {
+		// Insert val at beginning
+		this->_emplace_front(val);
+	}
+
+	void push_front(T&& val) {
+		// Insert val at beginning
+		this->_emplace_front(std::move(val));
+	}
+
+	void push_back(const T& val) {
+		// Insert val at end
+		this->_emplace_back(val);
+	}
+
+	void push_back(T&& val) {
+		// Insert val at end
+		this->_emplace_back(std::move(val));
+	}
+
+	iterator insert(const_iterator where, const T& val) {
+		// Insert by copying val at where
+		return this->emplace(where, val);
+	}
+
+	iterator insert(const_iterator where, T&& val) {
+		// Insert by moving val at where
+		return this->emplace(where, std::move(val));
+	}
+
+	iterator insert(const_iterator where, const size_type count) {
+		// Insert count * value-initialized at where
+		const auto offset = static_cast<size_type>(where - this->begin());
+		this->_insert(offset, count);
+		return this->begin() + offset;
+	}
+
+	iterator insert(const_iterator where, const size_type count, const T& val) {
+		// Insert count * val at where
+		const auto offset = static_cast<size_type>(where - this->begin());
+		this->_insert(offset, count, val);
+		return this->begin() + offset;
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	iterator insert(const_iterator where, It first, Se last) {
+		// Insert range [first, last) at where
+		return this->_insert_range(where, first, last);
+	}
+
+	iterator insert(const_iterator where, std::initializer_list<T> initList) {
+		// Insert initList at where
+		return this->_insert_range(where, initList.begin(), initList.end());
+	}
+
+	iterator prepend(const size_type count) {
+		// Prepend count * value-initialized
+		return this->_prepend(count);
+	}
+
+	iterator prepend(const size_type count, const T& val) {
+		// Prepend count * val
+		return this->_prepend(count, val);
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	iterator prepend(It first, Se last) {
+		// Prepend range [first, last)
+		_DequeInsertGuard<Deque, _GrowthDirection::FRONT> guard(this, _data.size);
+		if constexpr (std::bidirectional_iterator<It>) {
+			while (first != last) {
+				this->_emplace_front(*--last);
+			}
+		}
+		else {
+			size_type count = 0;
+			for (; first != last; ++first, ++count) {
+				this->_emplace_front(*first);
+			}
+
+			std::reverse(this->begin(), this->begin() + count);
+		}
+		guard.release();
+		return this->begin();
+	}
+
+	iterator prepend(std::initializer_list<T> initList) {
+		// Prepend initList
+		return this->prepend(initList.begin(), initList.end());
+	}
+
+	iterator append(const size_type count) {
+		// Append count * value-initialized
+		return this->_append(count);
+	}
+
+	iterator append(const size_type count, const T& val) {
+		// Append count * val
+		return this->_append(count, val);
+	}
+
+	template<std::input_iterator It, std::sentinel_for<It> Se>
+	iterator append(It first, const Se last) {
+		// Append range [first, last)
+		const auto oldSize = _data.size;
+
+		_DequeInsertGuard<Deque, _GrowthDirection::BACK> guard(this, oldSize);
+		for (; first != last; ++first) {
+			this->_emplace_back(*first);
+		}
+		guard.release();
+		return this->begin() + oldSize;
+	}
+
+	iterator append(std::initializer_list<T> initList) {
+		// Append initList
+		return this->append(initList.begin(), initList.end());
+	}
+
 	void assign(size_type count, const T& val) {
 		// Assign count * val
 		const auto end = this->end();
@@ -534,12 +753,23 @@ public:
 	template<std::input_iterator It, std::sentinel_for<It> Se>
 	void assign(It first, Se last) {
 		// Assign range [first, last)
-		this->_assign(std::move(first), std::move(last));
+		this->_assign_range(std::move(first), std::move(last));
 	}
 
 	void assign(std::initializer_list<T> initList) {
-		// Assign range [initList.begin(), initList.end())
-		this->_assign(initList.begin(), initList.end());
+		// Assign initList
+		this->_assign_range(initList.begin(), initList.end());
+	}
+
+	void pop_front() noexcept {
+		// Erase the first element
+		memory::destruct_at(_data.get_address(_data.index));
+		if (--_data.size == 0) {
+			_data.index = 0;
+		}
+		else {
+			++_data.index;
+		}
 	}
 
 	void pop_back() noexcept {
@@ -551,12 +781,11 @@ public:
 	}
 
 	void clear() noexcept {
-		// Erase all elements
+		// Erase all elements and free all memory
 		while (_data.size > 0) {
 			this->pop_back();
 		}
 
-		// Consider 
 		if (_data.map) {
 			this->_free_empty_map();
 		}
@@ -598,14 +827,14 @@ public:
 			return;
 		}
 
-		for (auto i = 0; i < myMapSize; ++i) {
-			std::cout << " " << i << " ";
+		for (auto _i = 0; _i < myMapSize; ++_i) {
+			std::cout << " " << _i << " ";
 		}
 		std::cout << "\n";
 
-		for (auto i = 0, j = 0; i < myMapSize; ++i) {
+		for (auto _i = 0, j = 0; _i < myMapSize; ++_i) {
 			std::cout << "[";
-			if (myMap[i]) {
+			if (myMap[_i]) {
 				std::cout << j;
 				++j;
 			}
@@ -618,20 +847,12 @@ public:
 	}
 
 private:
-	void _construct_n(size_type count) {
-		// Construct count value-initialized elements
+	template<class... Args>
+	void _construct_n(size_type count, const Args&... args) {
+		// Construct deque with count elements constructed from args
 		_DequeConstructGuard<Deque> guard(this);
 		for (; count > 0; --count) {
-			this->_emplace_back();
-		}
-		guard.release();
-	}
-
-	void _construct_n(size_type count, const T& val) {
-		// Construct count * val
-		_DequeConstructGuard<Deque> guard(this);
-		for (; count > 0; --count) {
-			this->_emplace_back(val);
+			this->_emplace_back(args...);
 		}
 		guard.release();
 	}
@@ -659,23 +880,20 @@ private:
 			newMapSize *= 2;
 		}
 		
-		const auto blockOffset	= static_cast<size_type>(_data.index / _blockSize);
-		const auto blockOffset_	= static_cast<_MapDiffType>(blockOffset);
-		const auto myMapSize_	= static_cast<_MapDiffType>(myMapSize);
+		const auto blockOffset = _data.index / _blockSize;
 		// Allocate new map
 		const auto newMap = static_cast<_MapPointer>(memory::allocate(newMapSize, sizeof(_BlockPointer)));
 		// Copy from the first block to the end of old map to new map
-		auto newPtr = memory::uninitialized_copy(myMap + blockOffset_, myMap + myMapSize_, newMap + blockOffset_, newMap + myMapSize_).out;
+		auto newPtr = memory::uninitialized_copy(myMap + blockOffset, myMap + myMapSize, newMap + blockOffset, newMap + myMapSize).out;
 
-		const auto mapGrowth	= newMapSize - myMapSize;
-		const auto mapGrowth_	= static_cast<_MapDiffType>(mapGrowth);
+		const auto mapGrowth = newMapSize - myMapSize;
 		if (blockOffset <= mapGrowth) { // Growth is greater than offset of initial block
 			// Copy the rest of old map to the right of new copied map
-			newPtr = memory::uninitialized_copy(myMap, myMap + blockOffset_, newPtr, newPtr + (mapGrowth_ - blockOffset_)).out;
+			newPtr = memory::uninitialized_copy(myMap, myMap + blockOffset, newPtr, newPtr + (mapGrowth - blockOffset)).out;
 			// Clear prefix of newMap
-			memory::uninitialized_value_construct_n(newMap, blockOffset_);
+			memory::uninitialized_value_construct_n(newMap, blockOffset);
 			// Clear suffix of newMap
-			memory::uninitialized_value_construct_n(newPtr, mapGrowth_ - blockOffset_);
+			memory::uninitialized_value_construct_n(newPtr, mapGrowth - blockOffset);
 		}
 		else {
 			/*
@@ -689,15 +907,15 @@ private:
 			Therefore, it is theoretically impossible to reach this branch if we follow the "power of 2 map size" policy.
 			*/
 			// Copy mapGrowth of old map to the right of new copied map
-			memory::uninitialized_copy(myMap, myMap + mapGrowth_, newPtr, newPtr + mapGrowth_);
+			memory::uninitialized_copy(myMap, myMap + mapGrowth, newPtr, newPtr + mapGrowth);
 			// Copy the rest of old map wrapped back to the beginning of new map
-			newPtr = memory::uninitialized_copy(myMap + mapGrowth_, myMap + blockOffset_, newMap, newMap + (blockOffset_ - mapGrowth_)).out;
+			newPtr = memory::uninitialized_copy(myMap + mapGrowth, myMap + blockOffset, newMap, newMap + (blockOffset - mapGrowth)).out;
 			// Clear the middle of new map
-			memory::uninitialized_value_construct_n(newPtr, mapGrowth_);
+			memory::uninitialized_value_construct_n(newPtr, mapGrowth);
 		}
 
 		if (myMap) { // Free old map
-			memory::destruct(myMap, myMap + myMapSize_);
+			memory::destruct(myMap, myMap + myMapSize);
 			memory::deallocate(myMap, myMapSize * sizeof(_BlockPointer));
 		}
 
@@ -715,7 +933,7 @@ private:
 		while (myMapSize > 0) {
 			--myMapSize;
 
-			auto& block = myMap[static_cast<_MapDiffType>(myMapSize)];
+			auto& block = myMap[myMapSize];
 			if (block) { // Free block
 				memory::deallocate(block, _blockSize * sizeof(T));
 			}
@@ -741,6 +959,7 @@ private:
 		}
 
 		const auto mapCapacity = myMapSize * _blockSize;
+		
 		/*
 		Adjust myIndex to correctly reflect the first element in deque after map grow.
 		
@@ -753,6 +972,23 @@ private:
 			X mod 2^n == X & (2^n - 1)
 		*/
 		myIndex &= mapCapacity - 1; // Equivalent to "myIndex %= mapCapacity;"
+		
+		/*
+		This is MSVC's std::deque initial intention: on the first insertion into an empty deque, it places the
+		element at the end of the block furthest from the intended growth direction. Specifically, emplace_front()
+		chooses offset _blockSize - 1, while emplace_back() chooses offset 0. This leaves maximum space for as many
+		consecutive calls in the same direction as possible before allocating a new block is needed.
+
+		The trade-off: An emplace_front() immediately followed by emplace_back() (or vice versa) forces an extra
+		block allocation, since the two elements end up in opposite ends of the block with nothing in between.
+		Allocating 2 separate blocks to hold just 2 elements inserted in opposite directions is highly inefficient.
+
+		We avoid this by centering the first element in the block, leaving room on both sides for subsequent insertions
+		regardless of growth direction.
+		*/
+		if (mySize == 0) {
+			myIndex = _blockSize / 2;
+		}
 
 		const auto newIndex		= static_cast<size_type>((myIndex != 0 ? myIndex : mapCapacity) - 1);
 		const auto blockOffset	= _data.get_block_offset(newIndex);
@@ -773,7 +1009,17 @@ private:
 		auto& myIndex	= _data.index;
 		auto& mySize	= _data.size;
 
+		if ((myIndex + mySize) % _blockSize == 0 &&
+			myMapSize <= (mySize + _blockSize) / _blockSize
+		) {
+			this->_grow_map_at_least(1);
+		}
+
 		myIndex &= myMapSize * _blockSize - 1;
+
+		if (mySize == 0) {
+			myIndex = _blockSize / 2;
+		}
 
 		const auto newIndex		= static_cast<size_type>(myIndex + mySize);
 		const auto blockOffset	= _data.get_block_offset(newIndex);
@@ -786,8 +1032,228 @@ private:
 		++mySize;
 	}
 
+	template<class... Args>
+	void _insert(const size_type offset, const size_type count, const Args&... args) {
+		// Insert count elements constructed from args at offset
+		if (count == 0) {
+			return;
+		}
+
+		const auto oldSize		= _data.size;
+		const auto remaining	= oldSize - offset;
+		if (offset < remaining) { // Insert closer to front
+			_DequeInsertGuard<Deque, _GrowthDirection::FRONT> guard(this, oldSize);
+			if (offset < count) { // Insert longer than prefix
+				// Push excessive elements
+				for (auto _i = count - offset; _i > 0; --_i) {
+					this->_emplace_front(args...);
+				}
+				// Push prefix
+				for (auto _i = offset; _i > 0; --_i) {
+					this->_emplace_front(std::move(_data.subscript(count - 1)));
+				}
+				// Fill remaining values
+				if constexpr (sizeof...(args) == 0) {
+					memory::fill_n(this->begin() + count, offset, T{});
+				}
+				else {
+					memory::fill_n(this->begin() + count, offset, args...);
+				}
+			}
+			else { // Insert shorter than prefix
+				// Push part of prefix
+				for (auto _i = count; _i > 0; --_i) {
+					this->_emplace_front(std::move(_data.subscript(count - 1)));
+				}
+
+				memory::_TempObjectGuard<T> object(args...);
+
+				const auto mid = this->begin() + count;
+				memory::move(mid + count, mid + offset, mid); // Move the rest of prefix
+				memory::fill(this->begin() + offset, mid + offset, object.get_value()); // Fill remaining values
+			}
+			guard.release();
+		}
+		else { // Insert closer to back
+			_DequeInsertGuard<Deque, _GrowthDirection::BACK> guard(this, oldSize);
+			if (remaining < count) { // Insert longer than suffix
+				// Push excessive elements
+				for (auto _i = count - remaining; _i > 0; --_i) {
+					this->_emplace_back(args...);
+				}
+				// Push suffix
+				for (size_type _i = 0; _i < remaining; ++_i) {
+					this->_emplace_back(std::move(_data.subscript(offset + _i)));
+				}
+				// Fill remaining values
+				if constexpr (sizeof...(args) == 0) {
+					memory::fill_n(this->begin() + offset, remaining, T{});
+				}
+				else {
+					memory::fill_n(this->begin() + offset, remaining, args...);
+				}
+			}
+			else { // Insert shorter than suffix
+				// Push part of suffix
+				for (size_type _i = 0; _i < count; ++_i) {
+					this->_emplace_back(std::move(_data.subscript(offset + remaining - count + _i)));
+				}
+
+				memory::_TempObjectGuard<T> object(args...);
+
+				const auto mid = this->begin() + offset;
+				memory::move_backward(mid, mid + remaining - count, mid + remaining); // Move the rest of suffix
+				memory::fill_n(mid, count, object.get_value()); // Fill remaining values
+			}
+			guard.release();
+		}
+	}
+
 	template<class It, class Se>
-	void _assign(It first, const Se last) {
+	void _insert_uncounted_range(const size_type offset, It first, Se last) {
+		// Insert unknown number of elements from [first, last) at offset
+		if (first == last) {
+			return;
+		}
+
+		const auto oldSize = _data.size;
+		if (offset <= oldSize / 2) {
+			_DequeInsertGuard<Deque, _GrowthDirection::FRONT> guard(this, oldSize);
+			for (; first != last; ++first) {
+				this->_emplace_front(*first);
+			}
+			guard.release();
+
+			const auto mid = this->begin() + static_cast<size_type>(_data.size - oldSize);
+			std::reverse(this->begin(), mid);
+
+			std::rotate(this->begin(), mid, mid + offset);
+		}
+		else {
+			_DequeInsertGuard<Deque, _GrowthDirection::BACK> guard(this, oldSize);
+			for (; first != last; ++first) {
+				this->_emplace_back(*first);
+			}
+			guard.release();
+
+			std::rotate(this->begin() + offset, this->begin() + oldSize, this->end());
+		}
+	}
+
+	template<class It, class Se>
+	void _insert_counted_range(const size_type offset, const size_type count, It first, const Se last) {
+		// Insert elements from counted range [first, first + count) at offset
+		if (count == 0) {
+			return;
+		}
+
+		const auto oldSize		= _data.size;
+		const auto remaining	= oldSize - offset;
+		if (offset < remaining) {
+			_DequeInsertGuard<Deque, _GrowthDirection::FRONT> guard(this, oldSize);
+			if (offset < count) {
+				/*
+				We need to iterate backwards range [first, first + count - offset) and construct to the front of *this.
+				This requires at least bidirectional iterator. Otherwise, we have to iterate forwards and construct as
+				usual, then reverse the constructed range.
+				*/
+				if constexpr (std::bidirectional_iterator<It>) {
+					const auto tail = std::ranges::next(first, count - offset);
+					for (auto mid = tail; mid != first;) {
+						this->_emplace_front(*--mid);
+					}
+					first = tail;
+				}
+				else {
+					for (auto _i = count - offset; _i > 0; --_i, ++first) {
+						this->_emplace_front(*first);
+					}
+					std::reverse(this->begin(), this->begin() + (count - offset));
+				}
+
+				for (auto _i = offset; _i > 0; --_i) {
+					this->_emplace_front(std::move(_data.subscript(count - 1)));
+				}
+
+				memory::copy_n(first, offset, this->begin() + count);
+			}
+			else {
+				for (auto _i = count; _i > 0; --_i) {
+					this->_emplace_front(std::move(_data.subscript(count - 1)));
+				}
+
+				const auto mid = this->begin() + count;
+				memory::move(mid + count, mid + offset, mid);
+				memory::copy_n(first, count, this->begin() + offset);
+			}
+			guard.release();
+		}
+		else {
+			_DequeInsertGuard<Deque, _GrowthDirection::BACK> guard(this, oldSize);
+			if (remaining < count) {
+				for (auto mid = std::ranges::next(first, remaining); mid != last; ++mid) {
+					this->_emplace_back(*mid);
+				}
+
+				for (size_type _i = 0; _i < remaining; ++_i) {
+					this->_emplace_back(std::move(_data.subscript(offset + _i)));
+				}
+
+				memory::copy_n(first, remaining, this->begin() + offset);
+			}
+			else {
+				for (auto _i = count; _i > 0; --_i) {
+					this->_emplace_back(std::move(_data.subscript(offset + remaining - _i)));
+				}
+
+				const auto mid = this->begin() + offset;
+				memory::move_backward(mid, mid + remaining - count, mid + remaining);
+				memory::copy_n(first, count, mid);
+			}
+			guard.release();
+		}
+	}
+
+	template<class It, class Se>
+	iterator _insert_range(const_iterator where, It first, Se last) {
+		// Insert range [first, last) at where
+		const auto offset = static_cast<size_type>(where - this->begin());
+		if constexpr (std::forward_iterator<It>) {
+			const auto count = static_cast<size_type>(std::ranges::distance(first, last));
+			this->_insert_counted_range(offset, count, std::move(first), std::move(last));
+		}
+		else {
+			this->_insert_uncounted_range(offset, std::move(first), std::move(last));
+		}
+		return this->begin() + offset;
+	}
+
+	template<class... Args>
+	iterator _prepend(size_type count, const Args&... args) {
+		// Prepend count elements constructed from args
+		_DequeInsertGuard<Deque, _GrowthDirection::FRONT> guard(this, _data.size);
+		for (; count > 0; --count) {
+			this->_emplace_front(args...);
+		}
+		guard.release();
+		return this->begin();
+	}
+
+	template<class... Args>
+	iterator _append(size_type count, const Args&... args) {
+		// Append count elements constructed from args
+		const auto oldSize = _data.size;
+
+		_DequeInsertGuard<Deque, _GrowthDirection::BACK> guard(this, oldSize);
+		for (; count > 0; --count) {
+			this->_emplace_back(args...);
+		}
+		guard.release();
+		return this->begin() + oldSize;
+	}
+
+	template<class It, class Se>
+	void _assign_range(It first, const Se last) {
 		// Assign range [first, last)
 		const auto end = this->end();
 		for (auto begin = this->begin(); begin != end; ++begin, ++first) {

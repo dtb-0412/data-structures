@@ -158,7 +158,7 @@ struct _ListValue {
 		: head(), size(0) {}
 	
 	void clear_non_head() noexcept {
-		// Erase all elements, excluding head sentinel
+		// Free all nodes, excluding head sentinel
 		head->prev->next = nullptr; // Remove circular link
 
 		for (node_pointer currNode = head->next; currNode;) {
@@ -169,6 +169,7 @@ struct _ListValue {
 	}
 
 	void clear() noexcept {
+		// Free all nodes
 		this->clear_non_head();
 		node_type::free_empty_node(head);
 	}
@@ -180,7 +181,8 @@ struct _ListValue {
 	}
 
 	/*
-		Sentinel node, linking both ends of list to form a circular structure
+		Sentinel node, serving as end() node.
+		Last node points back to head, forming a closed circular structure.
 
 		head->next:	points to the first node
 		head->prev:	points to the last node
@@ -746,7 +748,7 @@ public:
 					count = other._data.size; // Splice whole other
 				}
 				else {
-					for (_NodePointer _ = firstNode; _ != lastNode; _ = _->next) {
+					for (_NodePointer _node = firstNode; _node != lastNode; _node = _node->next) {
 						++count; // Count nodes and check for knot
 					}
 				}
@@ -950,11 +952,11 @@ private:
 		// Reuse current nodes
 		_NodePointer currNode = lastNode->next;
 		for (; count > 0 && currNode != lastNode; --count) {
-			if constexpr (sizeof...(args) != 0) {
-				currNode->value = args;
+			if constexpr (sizeof...(args) == 0) {
+				currNode->value = T{};
 			}
 			else {
-				currNode->value = T{};
+				currNode->value = args;
 			}
 			currNode = currNode->next;
 		}
