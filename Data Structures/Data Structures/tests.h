@@ -1,11 +1,12 @@
 #pragma once
 
 //#define AVL_TREE_TEST
-#define DEQUE_TEST
+//#define DEQUE_TEST
 //#define DYNAMIC_ARRAY_TEST
 //#define FORWARD_LIST_TEST
 //#define LIST_TEST
 //#define MAP_TEST
+#define QUEUE_TEST
 //#define RB_TREE_TEST
 //#define SET_TEST
 #define STACK_TEST
@@ -291,6 +292,31 @@ void map_test() {
 }
 #endif // MAP_TEST
 
+#ifdef QUEUE_TEST
+#include"./include/queue.h"
+void queue_test() {
+	Queue<int> arr;
+
+	for (auto i = 0; i < 10; ++i) {
+		arr.push(i);
+	}
+
+	printer::Printer printer;
+	printer.sep(", ").alt("Empty\n");
+
+	for (auto i = 0; i < 10; ++i) {
+		printer
+			.prompt("Queue front: ")
+			.print(arr.front());
+		std::cout << "\n";
+		arr.pop();
+	}
+
+	std::cout << "\nPress any key to exit...";
+	std::cin.get();
+}
+#endif // QUEUE_TEST
+
 #ifdef RB_TREE_TEST
 #include"./include/rb_tree.h"
 void rb_tree_test() {
@@ -369,17 +395,22 @@ void set_test() {
 #ifdef STACK_TEST
 #include"./include/stack.h"
 void stack_test() {
-	//Stack<int> arr;
+	Stack<int> arr;
 
-	//for (auto i = 0; i < 10; ++i) {
-	//	arr.push(i);
-	//}
+	for (auto i = 0; i < 10; ++i) {
+		arr.push(i);
+	}
 
-	//printer::Printer printer;
-	//printer.sep(", ").alt("Empty\n");
-	//printer
-	//	.prompt("Array: ")
-	//	.print_range(arr.begin(), arr.end());
+	printer::Printer printer;
+	printer.sep(", ").alt("Empty\n");
+	
+	for (auto i = 0; i < 10; ++i) {
+		printer
+			.prompt("Stack top: ")
+			.print(arr.top());
+		std::cout << "\n";
+		arr.pop();
+	}
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();

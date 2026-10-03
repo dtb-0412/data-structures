@@ -159,6 +159,7 @@
     <ClInclude Include="include\dynamic_array.h" />
     <ClInclude Include="include\forward_list.h" />
     <ClInclude Include="include\map.h" />
+    <ClInclude Include="include\queue.h" />
     <ClInclude Include="include\rb_tree.h" />
     <ClInclude Include="include\set.h" />
     <ClInclude Include="common.h" />
