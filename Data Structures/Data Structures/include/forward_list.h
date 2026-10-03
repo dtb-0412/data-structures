@@ -482,11 +482,6 @@ public:
 		return this->emplace_after(where, std::move(val));
 	}
 
-	iterator insert_after(const_iterator where, const size_type count) {
-		// Insert count * value-initialized after where
-		return iterator(this->_insert_after(where.ptr, count));
-	}
-
 	iterator insert_after(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val after where
 		return iterator(this->_insert_after(where.ptr, count, val));
@@ -501,11 +496,6 @@ public:
 	iterator insert_after(const_iterator where, std::initializer_list<T> initList) {
 		// Insert initList after where
 		return iterator(this->_insert_range_after(where.ptr, initList.begin(), initList.end()));
-	}
-
-	iterator prepend(const size_type count) {
-		// Prepend count * value-initialized
-		return iterator(this->_insert_after(_data.before_head(), count));
 	}
 
 	iterator prepend(const size_type count, const T& val) {

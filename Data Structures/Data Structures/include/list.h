@@ -576,11 +576,6 @@ public:
 		return this->emplace(where, std::move(val));
 	}
 
-	iterator insert(const_iterator where, const size_type count) {
-		// Insert count * value-initialized at where
-		return iterator(this->_insert(where.ptr, count));
-	}
-
 	iterator insert(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val at where
 		return iterator(this->_insert(where.ptr, count, val));
@@ -597,11 +592,6 @@ public:
 		return iterator(this->_insert_range(where.ptr, initList.begin(), initList.end()));
 	}
 
-	iterator prepend(const size_type count) {
-		// Prepend count * value-initialized
-		return iterator(this->_insert(_data.head->next, count));
-	}
-
 	iterator prepend(const size_type count, const T& val) {
 		// Prepend count * val
 		return iterator(this->_insert(_data.head->next, count, val));
@@ -616,11 +606,6 @@ public:
 	iterator prepend(std::initializer_list<T> initList) {
 		// Prepend initList
 		return iterator(this->_insert_range(_data.head->next, initList.begin(), initList.end()));
-	}
-
-	iterator append(const size_type count) {
-		// Append count * value-initialized
-		return iterator(this->_insert(_data.head, count));
 	}
 
 	iterator append(const size_type count, const T& val) {
@@ -921,15 +906,14 @@ private:
 		return newNode;
 	}
 
-	template<class... Args>
-	_NodePointer _insert(_NodePointer where, const size_type count, const Args&... args) {
+	_NodePointer _insert(_NodePointer where, const size_type count, const T& val) {
 		// Insert count elements constructed from args at where
 		if (count == 0) {
 			return where;
 		}
 
 		_ListInsertGuard<_MyVal> guard(std::addressof(_data));
-		guard.append_n(count, args...);
+		guard.append_n(count, val);
 		return guard.attach_before(where);
 	}
 
@@ -956,7 +940,7 @@ private:
 				currNode->value = T{};
 			}
 			else {
-				currNode->value = args;
+				((currNode->value = args), ...);
 			}
 			currNode = currNode->next;
 		}
@@ -984,6 +968,7 @@ private:
 		// Trim
 		if (first == last) {
 			this->_erase(currNode, lastNode);
+			return;
 		}
 		// Append
 		_ListInsertGuard<_MyVal> guard(std::addressof(_data));

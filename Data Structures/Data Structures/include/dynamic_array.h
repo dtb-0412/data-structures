@@ -594,11 +594,6 @@ public:
 		return this->emplace(where, std::move(val));
 	}
 
-	constexpr iterator insert(const_iterator where, const size_type count) {
-		// Insert count * value-initialized at where
-		return iterator(this->_insert(where.ptr, count));
-	}
-
 	constexpr iterator insert(const_iterator where, const size_type count, const T& val) {
 		// Insert count * val at where
 		return iterator(this->_insert(where.ptr, count, val));
@@ -615,11 +610,6 @@ public:
 		const auto offset = static_cast<size_type>(where.ptr - _data.first);
 		this->_insert_counted_range(where.ptr, initList.begin(), initList.size());
 		return iterator(_data.first + offset);
-	}
-
-	constexpr iterator append(const size_type count) {
-		// Append count * value-initialized
-		return iterator(this->_insert(_data.last, count));
 	}
 
 	constexpr iterator append(const size_type count, const T& val) {
@@ -889,9 +879,8 @@ private:
 		return newFirst + offset;
 	}
 
-	template<class... Args>
-	constexpr pointer _insert(pointer where, const size_type count, const Args&... args) {
-		// Insert count elements constructed from args at where
+	constexpr pointer _insert(pointer where, const size_type count, const T& val) {
+		// Insert count * val at where
 		if (count == 0) { // Do nothing, iterators won't be invalidated
 			return where;
 		}
@@ -915,12 +904,7 @@ private:
 			const auto constructedLast	= newFirst + offset + count;
 
 			_ArrayTransferGuard<_MyVal> guard(newCapacity, newFirst, constructedLast, constructedLast);
-			if constexpr (sizeof...(args) == 0) {
-				memory::uninitialized_value_construct_n(newFirst + offset, count);
-			}
-			else {
-				memory::uninitialized_fill_n(newFirst + offset, count, args...);
-			}
+			memory::uninitialized_fill_n(newFirst + offset, count, val);
 			guard.constructedFirst = newFirst + offset;
 
 			if (oneAtBack) {
@@ -941,11 +925,11 @@ private:
 			this->_change_array(newFirst, newSize, newCapacity);
 		}
 		else if (oneAtBack) {
-			this->_emplace_back_with_unused_capacity(args...);
+			this->_emplace_back_with_unused_capacity(val);
 		}
 		else {
 			// Handle aliasing with temporary object guard
-			const memory::_TempObjectGuard<T> object(args...);
+			const memory::_TempObjectGuard<T> object(val);
 			const auto& value = object.get_value();
 
 			const auto affected = static_cast<size_type>(oldLast - where);

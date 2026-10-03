@@ -2,13 +2,13 @@
 
 //#define AVL_TREE_TEST
 #define DEQUE_TEST
-#define DYNAMIC_ARRAY_TEST
+//#define DYNAMIC_ARRAY_TEST
 //#define FORWARD_LIST_TEST
-#define LIST_TEST
+//#define LIST_TEST
 //#define MAP_TEST
 //#define RB_TREE_TEST
 //#define SET_TEST
-//#define STACK_TEST
+#define STACK_TEST
 
 #include<deque>
 #include<forward_list>
@@ -17,7 +17,6 @@
 #include<queue>
 #include<set>
 #include<stack>
-#include<unordered_map>
 #include<vector>
 
 #include"common.h"
@@ -87,25 +86,43 @@ void deque_test() {
 //		bool	_1byte;
 //	};
 //#pragma pack(pop)
-//	Deque<_13BytesStruct> deque;
 
 	Deque<int> deque({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
-	//deque.assign({ 4, 3, 8, 0, 7, 5, 1, 9, 2 });
 	//deque.resize(5);
 	//deque.clear();
 
-	deque.emplace(deque.begin() + 3, 99);
-	deque.prepend(5, 100);
+	//deque.emplace(deque.begin(), 99);
+	//deque.prepend(5, 100);
 
 	printer::Printer printer;
 	printer.sep(", ").alt("Empty\n");
 	
-	std::cout << "Size: " << deque.size() << "\n";
-	deque.print_map();
-	
+	// Initial state
 	printer
 		.prompt("\nMy deque: ")
 		.print_range(deque.begin(), deque.end());
+	deque.print_map();
+
+	//// Insert
+	//deque.prepend(30, 99);
+	//printer
+	//	.prompt("\nAfter insert: ")
+	//	.print_range(deque.begin(), deque.end());
+	//deque.print_map();
+
+	//// Erase
+	//deque.erase(deque.begin() + 10, deque.begin() + 30);
+	//printer
+	//	.prompt("\nAfter erase: ")
+	//	.print_range(deque.begin(), deque.end());
+	//deque.print_map();
+
+	//// Shrink to fit
+	//deque.shrink_to_fit();
+	//printer
+	//	.prompt("\nShrink to fit: ")
+	//	.print_range(deque.begin(), deque.end());
+	//deque.print_map();
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
@@ -183,10 +200,6 @@ void list_test() {
 	List<int> list2({ 3, 7, 2, 9, 6 });
 
 	list1.splice(std::next(list1.begin(), list1.size()), list2);
-	list1.sort();
-	std::cout << "Sort after range [" <<
-		*std::next(list1.begin(), 4) << ", " <<
-		*std::prev(list1.end(), 1) << "]\n";
 	//list1.remove_if(
 	//	[&](const auto& val) -> bool { return val % 2 == 0; },
 	//	std::next(list1.begin(), list1.size() / 2 - 1), list1.end()
@@ -200,11 +213,21 @@ void list_test() {
 	printer.sep(printer::COMMA).alt("Empty\n");
 
 	printer
-		.prompt("Flist1: ")
+		.prompt("List1: ")
 		.print_range(list1.begin(), list1.end());
 	printer
-		.prompt("Flist2: ")
+		.prompt("List2: ")
 		.print_n(list2.begin(), std::distance(list2.begin(), list2.end()));
+
+	//std::cout << "\nSort range [" <<
+	//	*std::next(list1.begin(), 4) << ", " <<
+	//	*std::prev(list1.end(), 1) << "]\n";
+	//list1.sort(std::next(list1.begin(), 4), std::prev(list1.end(), 0));
+	list1.assign(4, 6);
+
+	printer
+		.prompt("List1: ")
+		.print_range(list1.begin(), list1.end());
 
 	printer
 		.sep("")
