@@ -399,3 +399,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Me
+Data Structures/common.h
+Data Structures/main.cpp
+Data Structures/test.h
