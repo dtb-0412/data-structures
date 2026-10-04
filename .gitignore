@@ -3,6 +3,11 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+# Me
+Data Structures/Data Structures/common.h
+Data Structures/Data Structures/main.cpp
+Data Structures/Data Structures/tests.h
+
 # User-specific files
 *.rsuser
 *.suo
@@ -399,8 +404,3 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
-
-# Me
-Data Structures/common.h
-Data Structures/main.cpp
-Data Structures/test.h
