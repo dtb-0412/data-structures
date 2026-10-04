@@ -5,11 +5,8 @@
 #include"compare.hpp"
 #include"memory.hpp"
 
-#include<bit>
-#include<format>
-#include<iostream>
-
 #define USE_MSVC_BLOCK_SIZE
+//#define DEBUG_MODE
 
 template<class DequeVal>
 class _DequeConstIterator {
@@ -248,6 +245,8 @@ public:
 											: _bytes <= 8 ? 2
 											:				1;
 #else
+#include<bit>
+
 	static constexpr std::size_t _blockSize = std::bit_floor(_rawBlockSize);
 #endif // USE_MSVC_BLOCK_SIZE
 
@@ -729,7 +728,7 @@ public:
 		return this->_insert_range(where, initList.begin(), initList.end());
 	}
 
-	iterator prepend(const size_type count, const T& val) {
+	iterator prepend(size_type count, const T& val) {
 		// Prepend count * val
 		_DequeInsertGuard<Deque, _GrowthDirection::FRONT> guard(this, _data.size);
 		for (; count > 0; --count) {
@@ -773,7 +772,7 @@ public:
 		return this->prepend(initList.begin(), initList.end());
 	}
 
-	iterator append(const size_type count, const T& val) {
+	iterator append(size_type count, const T& val) {
 		// Append count * val
 		const auto oldSize = _data.size;
 
@@ -988,6 +987,10 @@ public:
 		myIndex		%= _blockSize;
 	}
 
+#ifdef DEBUG_MODE
+#include<format>
+#include<iostream>
+
 	void print_map() const {
 		const auto& myMap		= _data.map;
 		const auto& myMapSize	= _data.mapSize;
@@ -1034,6 +1037,7 @@ public:
 			<< "\nIndex in map:   " << _data.index
 			<< "\nIndex in block: " << _data.index % _blockSize << "\n";
 	}
+#endif // DEBUG_MODE
 
 private:
 	template<class... Args>

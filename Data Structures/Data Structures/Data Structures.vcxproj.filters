@@ -44,7 +44,7 @@
     <ClInclude Include="include\avl_tree.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\rb_tree.h">
+    <ClInclude Include="include\red_black_tree.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\list.h">

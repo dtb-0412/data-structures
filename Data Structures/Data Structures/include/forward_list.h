@@ -790,7 +790,7 @@ private:
 			}
 			return;
 		}
-		// Runs out of nodes, insert the remaining nodes
+		// Insert the remaining nodes
 		_ForwardListInsertGuard<_MyVal> guard(std::addressof(_data));
 		guard.append_range(std::move(first), std::move(last));
 		guard.attach_after(currNode);
@@ -1069,7 +1069,7 @@ private:
 			const _NodePointer beforeLast	= this->_sort(beforeMid, last, length, comp);
 			beforeMid						= this->_inplace_merge(beforeFirst, beforeMid, beforeLast, comp);
 			
-			length <<= 1; // length *= 2
+			length *= 2;
 		}
 	}
 

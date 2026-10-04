@@ -7,10 +7,10 @@ int main() {
 	//forward_list_test();
 	//list_test();
 	//map_test();
-	queue_test();
-	//rb_tree_test();
+	//queue_test();
+	//red_black_tree_test();
 	//set_test();
-	stack_test();
+	//stack_test();
 	return 0;
 }
 

@@ -4,6 +4,13 @@
 
 #include"deque.h"
 
+/*
+Possible underlying containers for stack:
+	- Deque
+	- DynamicArray
+	- List
+	- ... or any other container that supports O(1) insertion and deletion at back
+*/
 template<class T, class Cont = Deque<T>>
 class Stack {
 public:
@@ -23,28 +30,11 @@ public:
 		noexcept(std::is_nothrow_move_constructible_v<container_type>)
 		: _cont(std::move(_cont)) {}
 
-	Stack(const Stack& other)
-		: _cont(other._cont) {}
+	Stack(const Stack&) = default;
+	Stack(Stack&&)		= default;
 
-	Stack(Stack&& other)
-		noexcept(std::is_nothrow_move_constructible_v<container_type>)
-		: _cont(std::move(other._cont)) {}
-
-	Stack& operator=(const Stack& other) {
-		if (this != std::addressof(other)) {
-			_cont = other._cont;
-		}
-		return *this;
-	}
-
-	Stack& operator=(Stack&& other)
-		noexcept(std::is_nothrow_move_assignable_v<container_type>)
-	{
-		if (this != std::addressof(other)) {
-			_cont = std::move(other._cont);
-		}
-		return *this;
-	}
+	Stack& operator=(const Stack&)	= default;
+	Stack& operator=(Stack&&)		= default;
 
 	[[nodiscard]] bool is_empty() const {
 		if constexpr (requires { _cont.is_empty(); }) {
@@ -101,7 +91,7 @@ public:
 	}
 
 private:
-	Cont _cont;
+	Cont _cont{}; // Value-initialize here, since we use default empty constructor for convenience
 };
 
 template<class T, class Cont>
@@ -121,4 +111,8 @@ template<class T, std::three_way_comparable Cont>
 ) {
 	return lhs.container() <=> rhs.container();
 }
+
+// Deduction guide (CTAD)
+template<class Cont>
+Stack(Cont) -> Stack<typename Cont::value_type, Cont>;
 #endif // STACK_H

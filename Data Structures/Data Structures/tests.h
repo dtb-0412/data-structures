@@ -1,5 +1,6 @@
 #pragma once
 
+#define DEBUG_MODE
 //#define AVL_TREE_TEST
 //#define DEQUE_TEST
 //#define DYNAMIC_ARRAY_TEST
@@ -7,18 +8,18 @@
 //#define LIST_TEST
 //#define MAP_TEST
 #define QUEUE_TEST
-//#define RB_TREE_TEST
+//#define RED_BLACK_TREE_TEST
 //#define SET_TEST
-#define STACK_TEST
+//#define STACK_TEST
 
-#include<deque>
-#include<forward_list>
-#include<list>
-#include<map>
-#include<queue>
-#include<set>
-#include<stack>
-#include<vector>
+//#include<deque>
+//#include<forward_list>
+//#include<list>
+//#include<map>
+//#include<queue>
+//#include<set>
+//#include<stack>
+//#include<vector>
 
 #include"common.h"
 #include"printer.hpp"
@@ -48,15 +49,15 @@ void avl_tree_test() {
 		tree1.erase(8);
 		tree1.merge(tree2);
 
-		printer::Printer printer;
+		printer::RangePrinter printer;
 		printer.sep(", ").alt("Empty\n");
 		printer
 			.prompt("Tree1: ")
-			.print_range(tree1.begin(), tree1.end());
+			.print(tree1.begin(), tree1.end());
 
 		printer
 			.prompt("Tree2: ")
-			.print_range(tree2.begin(), tree2.end());
+			.print(tree2.begin(), tree2.end());
 
 		tree1.level_order("\n", true);
 		tree2.level_order("\n");
@@ -95,35 +96,35 @@ void deque_test() {
 	//deque.emplace(deque.begin(), 99);
 	//deque.prepend(5, 100);
 
-	printer::Printer printer;
+	printer::RangePrinter printer;
 	printer.sep(", ").alt("Empty\n");
 	
 	// Initial state
 	printer
 		.prompt("\nMy deque: ")
-		.print_range(deque.begin(), deque.end());
+		.print(deque.begin(), deque.end());
 	deque.print_map();
 
-	//// Insert
-	//deque.prepend(30, 99);
-	//printer
-	//	.prompt("\nAfter insert: ")
-	//	.print_range(deque.begin(), deque.end());
-	//deque.print_map();
+	// Insert
+	deque.prepend(30, 99);
+	printer
+		.prompt("\nAfter insert: ")
+		.print(deque.begin(), deque.end());
+	deque.print_map();
 
-	//// Erase
-	//deque.erase(deque.begin() + 10, deque.begin() + 30);
-	//printer
-	//	.prompt("\nAfter erase: ")
-	//	.print_range(deque.begin(), deque.end());
-	//deque.print_map();
+	// Erase
+	deque.erase(deque.begin() + 10, deque.begin() + 30);
+	printer
+		.prompt("\nAfter erase: ")
+		.print(deque.begin(), deque.end());
+	deque.print_map();
 
-	//// Shrink to fit
-	//deque.shrink_to_fit();
-	//printer
-	//	.prompt("\nShrink to fit: ")
-	//	.print_range(deque.begin(), deque.end());
-	//deque.print_map();
+	// Shrink to fit
+	deque.shrink_to_fit();
+	printer
+		.prompt("\nShrink to fit: ")
+		.print(deque.begin(), deque.end());
+	deque.print_map();
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
@@ -144,11 +145,11 @@ void dynamic_array_test() {
 	arr.erase(arr.begin(), arr.begin() + 5);
 	//arr.assign(13, 22);
 
-	printer::Printer printer;
+	printer::RangePrinter printer;
 	printer.sep(", ").alt("Empty\n");
 	printer
 		.prompt("Array: ")
-		.print_range(arr.begin(), arr.end());
+		.print(arr.begin(), arr.end());
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
@@ -175,12 +176,12 @@ void forward_list_test() {
 	//flist1.assign({ 3, 2, 1 });
 	//flist1.resize(12, 99);
 
-	printer::Printer printer;
+	printer::RangePrinter printer;
 	printer.sep(printer::COMMA).alt("Empty\n");
 
 	printer
 		.prompt("Flist1: ")
-		.print_range(flist1);
+		.print(flist1);
 	printer
 		.prompt("Flist2: ")
 		.print_n(flist2.begin(), std::distance(flist2.begin(), flist2.end()));
@@ -210,12 +211,12 @@ void list_test() {
 	//list1.resize(3);
 	//list1.reverse(list1.begin(), list1.end());
 
-	printer::Printer printer;
+	printer::RangePrinter printer;
 	printer.sep(printer::COMMA).alt("Empty\n");
 
 	printer
 		.prompt("List1: ")
-		.print_range(list1.begin(), list1.end());
+		.print(list1.begin(), list1.end());
 	printer
 		.prompt("List2: ")
 		.print_n(list2.begin(), std::distance(list2.begin(), list2.end()));
@@ -228,7 +229,7 @@ void list_test() {
 
 	printer
 		.prompt("List1: ")
-		.print_range(list1.begin(), list1.end());
+		.print(list1.begin(), list1.end());
 
 	printer
 		.sep("")
@@ -279,14 +280,14 @@ void map_test() {
 		map1.erase(8);
 		map1.merge(map2);
 
-		printer::Printer printer;
+		printer::RangePrinter printer;
 		printer.sep(", ").alt("Empty\n");
 		printer
 			.prompt("Map1: ")
-			.print_range(map1.begin(), map1.end(), MapDefaultPrint{});
+			.print(map1.begin(), map1.end(), MapDefaultPrint{});
 		printer
 			.prompt("Map2: ")
-			.print_range(map2.begin(), map2.end(), MapDefaultPrint{});
+			.print(map2.begin(), map2.end(), MapDefaultPrint{});
 		map1.level_order();
 	}
 }
@@ -301,14 +302,11 @@ void queue_test() {
 		arr.push(i);
 	}
 
-	printer::Printer printer;
+	printer::RangePrinter printer;
 	printer.sep(", ").alt("Empty\n");
 
 	for (auto i = 0; i < 10; ++i) {
-		printer
-			.prompt("Queue front: ")
-			.print(arr.front());
-		std::cout << "\n";
+		std::cout << "Queue front: " << arr.front() << "\n";
 		arr.pop();
 	}
 
@@ -317,21 +315,21 @@ void queue_test() {
 }
 #endif // QUEUE_TEST
 
-#ifdef RB_TREE_TEST
-#include"./include/rb_tree.h"
-void rb_tree_test() {
+#ifdef RED_BLACK_TREE_TEST
+#include"./include/red_black_tree.h"
+void red_black_tree_test() {
 	std::vector<int> data({ 5, 4, 8, 3, 6, 13, 12, 24, });
 	std::vector<int> data2({ 7, 20, 10, 2, 9, 1 });
 
 	{
-		RBTree<TYPE, COMP> tree;
+		RedBlackTree<TYPE, COMP> tree;
 		for (const auto& val : data) {
 			tree.emplace_hint(tree.end(), TYPE(val));
 		}
 
-		RBTree<TYPE, COMP> tree1(tree);
+		RedBlackTree<TYPE, COMP> tree1(tree);
 
-		RBTree<TYPE, COMP> tree2;
+		RedBlackTree<TYPE, COMP> tree2;
 		tree2.insert(data2.begin(), data2.end());
 		tree2.level_order();
 		std::cout << "\n\n";
@@ -339,22 +337,22 @@ void rb_tree_test() {
 		tree1.erase(8);
 		//tree1.merge(tree2);
 
-		printer::Printer printer;
+		printer::RangePrinter printer;
 		printer.sep(", ").alt("Empty\n");
 		printer
 			.prompt("Tree1: ")
-			.print_range(tree1.begin(), tree1.end());
+			.print(tree1.begin(), tree1.end());
 
 		printer
 			.prompt("Tree2: ")
-			.print_range(tree2.begin(), tree2.end());
+			.print(tree2.begin(), tree2.end());
 		tree1.level_order();
 	}
 
 	std::cout << "\nPress any key to exit...";
 	std::cin.get();
 }
-#endif // RB_TREE_TEST
+#endif // RED_BLACK_TREE_TEST
 
 #ifdef SET_TEST
 #include"./include/set.h"
@@ -375,15 +373,15 @@ void set_test() {
 
 		set.merge(set2);
 
-		printer::Printer printer;
+		printer::RangePrinter printer;
 		printer.sep(", ").alt("Empty\n");
 		printer
 			.prompt("set1: ")
-			.print_range(set.begin(), set.end());
+			.print(set.begin(), set.end());
 
 		printer
 			.prompt("set2: ")
-			.print_range(set2.begin(), set2.end());
+			.print(set2.begin(), set2.end());
 		set.level_order();
 	}
 
@@ -401,14 +399,11 @@ void stack_test() {
 		arr.push(i);
 	}
 
-	printer::Printer printer;
+	printer::RangePrinter printer;
 	printer.sep(", ").alt("Empty\n");
 	
 	for (auto i = 0; i < 10; ++i) {
-		printer
-			.prompt("Stack top: ")
-			.print(arr.top());
-		std::cout << "\n";
+		std::cout << "Stack top: " << arr.top() << "\n";
 		arr.pop();
 	}
 

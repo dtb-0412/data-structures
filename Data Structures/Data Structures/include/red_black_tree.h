@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RB_TREE_H
-#define RB_TREE_H
+#ifndef RED_BLACK_TREE_H
+#define RED_BLACK_TREE_H
 
 #include"tree_core.h"
 
@@ -296,7 +296,7 @@ private:
 };
 
 template<class T, class Comp = std::less<T>>
-class RBTree : public _BSTree<
+class RedBlackTree : public _BSTree<
 	_BSTreeTraits<T, T, Comp, _RBTreeNode, false>,
 	_RBTreeCore
 > {
@@ -327,25 +327,25 @@ public:
 
 	using _BaseTree::_BaseTree;
 
-	void swap(RBTree& other) noexcept(noexcept(_BaseTree::swap(other))) {
+	void swap(RedBlackTree& other) noexcept(noexcept(_BaseTree::swap(other))) {
 		_BaseTree::swap(other);
 	}
 };
 
 template<class T, class Comp>
-void swap(RBTree<T, Comp>& lhs, RBTree<T, Comp>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
+void swap(RedBlackTree<T, Comp>& lhs, RedBlackTree<T, Comp>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
 	lhs.swap(rhs);
 }
 
 template<class T, class Comp>
-[[nodiscard]] bool operator==(const RBTree<T, Comp>& lhs, const RBTree<T, Comp>& rhs) {
+[[nodiscard]] bool operator==(const RedBlackTree<T, Comp>& lhs, const RedBlackTree<T, Comp>& rhs) {
 	return lhs.size() == rhs.size() &&
 		std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
 }
 
 template<class T, class Comp>
 [[nodiscard]] compare::SynthThreeWayCompareResult<T> operator<=>(
-	const RBTree<T, Comp>& lhs, const RBTree<T, Comp>& rhs
+	const RedBlackTree<T, Comp>& lhs, const RedBlackTree<T, Comp>& rhs
 ) {
 	return std::lexicographical_compare_three_way(
 		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{}
@@ -353,7 +353,7 @@ template<class T, class Comp>
 }
 
 template<class T, class Comp = std::less<T>>
-class RBMultiTree : public _BSTree<
+class RedBlackMultiTree : public _BSTree<
 	_BSTreeTraits<T, T, Comp, _RBTreeNode, true>,
 	_RBTreeCore
 > {
@@ -384,28 +384,28 @@ public:
 
 	using _BaseTree::_BaseTree;
 
-	void swap(RBMultiTree& other) noexcept(noexcept(_BaseTree::swap(other))) {
+	void swap(RedBlackMultiTree& other) noexcept(noexcept(_BaseTree::swap(other))) {
 		_BaseTree::swap(other);
 	}
 };
 
 template<class T, class Comp>
-void swap(RBMultiTree<T, Comp>& lhs, RBMultiTree<T, Comp>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
+void swap(RedBlackMultiTree<T, Comp>& lhs, RedBlackMultiTree<T, Comp>& rhs) noexcept(noexcept(lhs.swap(rhs))) {
 	lhs.swap(rhs);
 }
 
 template<class T, class Comp>
-[[nodiscard]] bool operator==(const RBMultiTree<T, Comp>& lhs, const RBMultiTree<T, Comp>& rhs) {
+[[nodiscard]] bool operator==(const RedBlackMultiTree<T, Comp>& lhs, const RedBlackMultiTree<T, Comp>& rhs) {
 	return lhs.size() == rhs.size() &&
 		std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
 }
 
 template<class T, class Comp>
 [[nodiscard]] compare::SynthThreeWayCompareResult<T> operator<=>(
-	const RBMultiTree<T, Comp>& lhs, const RBMultiTree<T, Comp>& rhs
+	const RedBlackMultiTree<T, Comp>& lhs, const RedBlackMultiTree<T, Comp>& rhs
 ) {
 	return std::lexicographical_compare_three_way(
 		lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare::SynthThreeWayCompare{}
 	);
 }
-#endif // RB_TREE_H
+#endif // RED_BLACK_TREE_H

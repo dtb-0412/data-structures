@@ -1,10 +1,8 @@
 #pragma once
-#ifndef TREE_BODY_H
-#define TREE_BODY_H
+#ifndef TREE_CORE_H
+#define TREE_CORE_H
 
-#include<iomanip>
-#include<iostream>
-#include<queue>
+//#define DEBUG_MODE
 
 #include"compare.hpp"
 #include"concepts.hpp"
@@ -1131,6 +1129,11 @@ public:
 		this->merge(other);
 	}
 
+#ifdef DEBUG_MODE
+#include<iomanip>
+#include<iostream>
+#include<queue>
+
 	void _node_print(_NodePointer node) {
 		if constexpr (_isMap) {
 			std::cout << "<" << node->value.first << ", " << std::fixed << std::setprecision(1) << node->value.second << ">";
@@ -1190,6 +1193,7 @@ public:
 		}
 		std::cout << "\n";
 	}
+#endif // DEBUG_MODE
 
 private:
 	template<std::input_iterator It, std::sentinel_for<It> Se>
@@ -1570,4 +1574,4 @@ private:
 	_MyVal		_data;
 	key_compare	_comp; // Key comparator for keeping order
 };
-#endif // TREE_BODY_H
+#endif // TREE_CORE_H
