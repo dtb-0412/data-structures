@@ -536,33 +536,33 @@ public:
 
 	template<class... Args>
 	reference emplace_front(Args&&... args) {
-		// Insert by perfectly forwarding args at beginning
+		// Insert by perfectly forwarding args at front
 		return this->_emplace(_data.head->next, std::forward<Args>(args)...)->value;
 	}
 
 	template<class... Args>
 	reference emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding args at end
+		// Insert by perfectly forwarding args at back
 		return this->_emplace(_data.head, std::forward<Args>(args)...)->value;
 	}
 
 	void push_front(const T& val) {
-		// Insert by copying val at beginning
+		// Insert by copying val at front
 		this->_emplace(_data.head->next, val);
 	}
 
 	void push_front(T&& val) {
-		// Insert by moving val at beginning
+		// Insert by moving val at front
 		this->_emplace(_data.head->next, std::move(val));
 	}
 
 	void push_back(const T& val) {
-		// Insert by copying val at end
+		// Insert by copying val at back
 		this->_emplace(_data.head, val);
 	}
 
 	void push_back(T&& val) {
-		// Insert by moving val at end
+		// Insert by moving val at back
 		this->_emplace(_data.head, std::move(val));
 	}
 

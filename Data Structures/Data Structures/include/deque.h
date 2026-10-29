@@ -563,10 +563,10 @@ public:
 	iterator emplace(const_iterator where, Args&&... args) {
 		// Insert by perfectly forwarding args at where
 		const auto offset = static_cast<size_type>(where - this->begin());
-		if (offset == 0) { // Insert at beginning
+		if (offset == 0) { // Insert at front
 			this->_emplace_front(std::forward<Args>(args)...);
 		}
-		else if (offset == _data.size) { // Insert at end
+		else if (offset == _data.size) { // Insert at back
 			this->_emplace_back(std::forward<Args>(args)...);
 		}
 		else {
@@ -591,7 +591,7 @@ public:
 				*newWhere = std::move(object.get_value());
 			}
 			else { // Insert closer to back, shift elements to the right
-				// Construct by moving the last element at end()
+				// Construct by moving the last element at back()
 				this->_emplace_back(std::move(*(this->end() - 1)));
 
 				const auto newEnd	= this->end();
@@ -606,35 +606,35 @@ public:
 
 	template<class... Args>
 	reference emplace_front(Args&&... args) {
-		// Insert by perfectly forwarding args at beginning
+		// Insert by perfectly forwarding args at front
 		this->_emplace_front(std::forward<Args>(args)...);
 		return this->front();
 	}
 
 	template<class... Args>
 	reference emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding args at end
+		// Insert by perfectly forwarding args at back
 		this->_emplace_back(std::forward<Args>(args)...);
 		return this->back();
 	}
 
 	void push_front(const T& val) {
-		// Insert val at beginning
+		// Insert val at front
 		this->_emplace_front(val);
 	}
 
 	void push_front(T&& val) {
-		// Insert val at beginning
+		// Insert val at front
 		this->_emplace_front(std::move(val));
 	}
 
 	void push_back(const T& val) {
-		// Insert val at end
+		// Insert val at back
 		this->_emplace_back(val);
 	}
 
 	void push_back(T&& val) {
-		// Insert val at end
+		// Insert val at back
 		this->_emplace_back(std::move(val));
 	}
 
@@ -1157,13 +1157,13 @@ private:
 
 	template<class... Args>
 	void _emplace_front(Args&&... args) {
-		// Insert by perfectly forwarding into element at beginning
+		// Insert by perfectly forwarding into element at front
 		auto& myMap		= _data.map;
 		auto& myMapSize = _data.mapSize;
 		auto& myIndex	= _data.index;
 		auto& mySize	= _data.size;
 
-		if (myIndex % _blockSize == 0 && // Insufficient block space for inserting at beginning of the first block
+		if (myIndex % _blockSize == 0 && // Insufficient block space for inserting at front of the first block
 			myMapSize <= (mySize + _blockSize) / _blockSize // Insufficient map space for allocating new block
 		) {
 			this->_grow_map_at_least(1);
@@ -1214,7 +1214,7 @@ private:
 
 	template<class... Args>
 	void _emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding into element at end
+		// Insert by perfectly forwarding into element at back
 		auto& myMap		= _data.map;
 		auto& myMapSize = _data.mapSize;
 		auto& myIndex	= _data.index;

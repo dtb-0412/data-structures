@@ -216,6 +216,13 @@ public:
 	}
 
 	template<class... Args>
+	std::pair<iterator, bool> try_emplace(key_type&& key, Args&&... args) {
+		// Insert by constructing in place using args and moving from key, does not construct whole node unless key is absent
+		const auto result = this->_try_emplace(std::move(key), std::forward<Args>(args)...);
+		return { iterator(result.first), result.second };
+	}
+
+	template<class... Args>
 	iterator try_emplace_hint(const_iterator hint, const key_type& key, Args&&... args) {
 		// Insert with hint by constructing in place using args and copying from key, does not construct whole node unless key is absent
 		const auto result = this->_try_emplace_hint(hint.ptr, key, std::forward<Args>(args)...);
@@ -223,16 +230,9 @@ public:
 	}
 
 	template<class... Args>
-	std::pair<iterator, bool> try_emplace(key_type&& key, Args&&... args) {
-		// Insert by constructing in place using args and moving from key, does not construct whole node unless key is absent
-		const auto result = this->_try_emplace(key, std::forward<Args>(args)...);
-		return { iterator(result.first), result.second };
-	}
-
-	template<class... Args>
 	iterator try_emplace_hint(const_iterator hint, key_type&& key, Args&&... args) {
 		// Insert with hint by constructing in place using args and moving from key, does not construct whole node unless key is absent
-		const auto result = this->_try_emplace_hint(hint.ptr, key, std::forward<Args>(args)...);
+		const auto result = this->_try_emplace_hint(hint.ptr, std::move(key), std::forward<Args>(args)...);
 		return iterator(result);
 	}
 
@@ -244,6 +244,13 @@ public:
 	}
 
 	template<class MappedT>
+	std::pair<iterator, bool> insert_or_assign(key_type&& key, MappedT&& mapped) {
+		// Insert key-value pair if key is absent, otherwise assign mapped to the value mapped by key
+		const auto result = this->_insert_or_assign(std::move(key), std::forward<MappedT>(mapped));
+		return { iterator(result.first), result.second };
+	}
+
+	template<class MappedT>
 	iterator insert_or_assign_hint(const_iterator hint, const key_type& key, MappedT&& mapped) {
 		// Insert key-value pair if key is absent, otherwise assign mapped to the value mapped by key
 		const auto result = this->_insert_or_assign_hint(hint.ptr, key, std::forward<MappedT>(mapped));
@@ -251,16 +258,9 @@ public:
 	}
 
 	template<class MappedT>
-	std::pair<iterator, bool> insert_or_assign(key_type&& key, MappedT&& mapped) {
-		// Insert key-value pair if key is absent, otherwise assign mapped to the value mapped by key
-		const auto result = this->_insert_or_assign(key, std::forward<MappedT>(mapped));
-		return { iterator(result.first), result.second };
-	}
-
-	template<class MappedT>
 	iterator insert_or_assign_hint(const_iterator hint, key_type&& key, MappedT&& mapped) {
 		// Insert key-value pair if key is absent, otherwise assign mapped to the value mapped by key
-		const auto result = this->_insert_or_assign_hint(hint.ptr, key, std::forward<MappedT>(mapped));
+		const auto result = this->_insert_or_assign_hint(hint.ptr, std::move(key), std::forward<MappedT>(mapped));
 		return iterator(result);
 	}
 

@@ -567,7 +567,7 @@ public:
 
 	template<class... Args>
 	constexpr reference emplace_back(Args&&... args) {
-		// Insert by perfectly forwarding args at end, provide strong guarantee
+		// Insert by perfectly forwarding args at back, provide strong guarantee
 		if (this->unused_capacity() > 0) {
 			return this->_emplace_back_with_unused_capacity(std::forward<Args>(args)...);
 		}
@@ -575,12 +575,12 @@ public:
 	}
 
 	constexpr void push_back(const T& val) {
-		// Insert by copying val at end, provide strong guarantee
+		// Insert by copying val at back, provide strong guarantee
 		this->emplace_back(val);
 	}
 
 	constexpr void push_back(T&& val) {
-		// Insert by moving val at end, provide strong guarantee
+		// Insert by moving val at back, provide strong guarantee
 		this->emplace_back(std::move(val));
 	}
 
@@ -629,7 +629,7 @@ public:
 	}
 
 	constexpr void assign(const size_type count) {
-		// Assign count * value-initialized
+		// Assign count * value-initialized elements
 		this->_assign(count, _ValueInitializeTag{});
 	}
 
@@ -813,7 +813,7 @@ private:
 
 	template<class... Args>
 	constexpr T& _emplace_back_with_unused_capacity(Args&&... args) {
-		// Insert by perfectly forwarding into element at end
+		// Insert by perfectly forwarding into element at back
 		pointer& myLast = _data.last;
 
 		memory::construct_at(myLast, std::forward<Args>(args)...);
@@ -955,7 +955,7 @@ private:
 
 	template<class It, class Se>
 	constexpr void _append_uncounted_range(It first, const Se last) {
-		// Insert uncounted range [first, last) at end
+		// Insert uncounted range [first, last) at back
 		for (; first != last; ++first) {
 			this->emplace_back(*first); // If one at back, provide strong guarantee. Otherwise, provide basic guarantee
 		}

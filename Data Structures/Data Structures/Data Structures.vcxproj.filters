@@ -60,4 +60,7 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="PUBLIC_API.md" />
+  </ItemGroup>
 </Project>

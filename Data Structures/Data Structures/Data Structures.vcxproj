@@ -168,6 +168,9 @@
     <ClInclude Include="tests.h" />
     <ClInclude Include="include\tree_core.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="PUBLIC_API.md" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
